@@ -1,0 +1,99 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            Int      @id @default(autoincrement())
+  name          String
+  dob           DateTime?
+  address       String?  @db.Text
+  phone         String   @unique
+  password_hash String
+  role          Role     @default(CUSTOMER)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  orders        Order[]
+}
+
+enum Role {
+  CUSTOMER
+  OWNER
+}
+
+model Product {
+  id            Int      @id @default(autoincrement())
+  name          String
+  description   String?  @db.Text
+  price         Decimal  @db.Decimal(10, 2)
+  stock         Int      @default(0)
+  image_url     String?
+  is_bestseller Boolean  @default(false)
+  display_order Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  orderItems    OrderItem[]
+}
+
+model Order {
+  id               String      @id @default(cuid())
+  user_id          Int
+  user             User        @relation(fields: [user_id], references: [id])
+  total_price      Decimal     @db.Decimal(10, 2)
+  status           OrderStatus @default(PENDING)
+  shipping_resi    String?
+  shipping_cost    Decimal     @db.Decimal(10, 2) @default(0)
+  shipping_service String?
+  payment_proof    String?
+  payment_deadline DateTime?
+  refund_account   String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  items            OrderItem[]
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  APPROVED
+  SHIPPED
+  COMPLETED
+  CANCELLED
+  REFUND_REQUESTED
+  REFUND_PENDING
+  REFUND_COMPLETED
+}
+
+model OrderItem {
+  id         Int     @id @default(autoincrement())
+  order_id   String
+  order      Order   @relation(fields: [order_id], references: [id])
+  product_id Int
+  product    Product @relation(fields: [product_id], references: [id])
+  quantity   Int
+  price      Decimal @db.Decimal(10, 2)
+}
+
+model Announcement {
+  id        Int      @id @default(autoincrement())
+  title     String
+  content   String   @db.Text
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Setting {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  value     String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
