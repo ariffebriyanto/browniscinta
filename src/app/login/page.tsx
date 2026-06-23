@@ -15,6 +15,16 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!phone.startsWith("62")) {
+      setError("Format salah. Nomor HP harus diawali dengan 62 (contoh: 62812...)");
+      return;
+    }
+    if (!/^\d+$/.test(phone)) {
+      setError("Format salah. Nomor HP hanya boleh berisi angka.");
+      return;
+    }
+
     setLoading(true);
     setError("");
     const res = await signIn("credentials", { phone, password, redirect: false });
@@ -95,8 +105,14 @@ export default function LoginPage() {
                   type="text"
                   className="form-input"
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="Contoh: 08123456789"
+                  onChange={(e) => {
+                    let val = e.target.value.replace(/\D/g, "");
+                    if (val.startsWith("0")) {
+                      val = "62" + val.slice(1);
+                    }
+                    setPhone(val);
+                  }}
+                  placeholder="Contoh: 6281234567890"
                   required
                 />
               </div>

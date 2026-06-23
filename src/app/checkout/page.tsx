@@ -3,10 +3,11 @@
 import Link from 'next/link';
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ShoppingBag, Calendar, MapPin, CreditCard, ChevronLeft, Truck } from 'lucide-react';
+import { ShoppingBag, Calendar, MapPin, CreditCard, ChevronLeft, Truck, AlertTriangle } from 'lucide-react';
 import { useSession } from "next-auth/react";
 import { createOrder } from "../customer/dashboard/actions";
-import { getProductForCart } from "./actions";
+import { getProductForCart, getProductsForCart } from "./actions";
+import { getUserProfile } from "../customer/profile/actions";
 
 function CartCheckoutInner() {
   const { data: session } = useSession();
@@ -15,30 +16,16 @@ function CartCheckoutInner() {
   const addId = searchParams?.get('add');
   const timestamp = searchParams?.get('t');
   
-  const [shippingCost, setShippingCost] = useState(0);
-  const [isCalculating, setIsCalculating] = useState(false);
   const [minDate, setMinDate] = useState('');
   const [deliveryDate, setDeliveryDate] = useState('');
   const [deliveryMode, setDeliveryMode] = useState<"DELIVERY" | "PICKUP">("DELIVERY");
-  const [shippingInfo, setShippingInfo] = useState<{ estimated_days: string; service?: string; is_estimate?: boolean; couriers?: any[] } | null>(null);
 
-  // Map and Address states
-  const [address, setAddress] = useState("Jalan Jambon, Gamping, Yogyakarta, -7.7647423, 110.3494548");
-  const [customerCoords, setCustomerCoords] = useState<{lat: number, lng: number}>({ lat: -7.7647423, lng: 110.3494548 });
-  const [mapOpen, setMapOpen] = useState(false);
-  const [leafletLoaded, setLeafletLoaded] = useState(false);
-
-  // Village code search
-  const [villageQuery, setVillageQuery] = useState('');
-  const [villageResults, setVillageResults] = useState<any[]>([]);
-  const [villageLoading, setVillageLoading] = useState(false);
-  const [selectedVillage, setSelectedVillage] = useState<{ code: string; name: string; district: string; regency: string; province: string } | null>(null);
-
-  // Free shipping
-  const [useFreeShipping, setUseFreeShipping] = useState(false);
-  const isJogja = selectedVillage?.province?.toUpperCase().includes('YOGYAKARTA') ?? false;
+  // User and Addresses
+  const [addresses, setAddresses] = useState<any[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState<number | null>(null);
 
   const [cartItems, setCartItems] = useState<any[]>([]);
+  const [fullProductsData, setFullProductsData] = useState<any[]>([]);
   const [isCartLoaded, setIsCartLoaded] = useState(false);
   const [isDirectBuy, setIsDirectBuy] = useState(false);
   const [uniqueCode, setUniqueCode] = useState(0);
@@ -46,12 +33,28 @@ function CartCheckoutInner() {
   useEffect(() => {
     // Generate unique code on mount
     setUniqueCode(Math.floor(Math.random() * 900) + 100);
+    
+    // Fetch user profile and addresses
+    getUserProfile().then(profile => {
+      if (profile && profile.addresses) {
+        setAddresses(profile.addresses);
+        const primary = profile.addresses.find((a: any) => a.is_primary);
+        if (primary) setSelectedAddressId(primary.id);
+        else if (profile.addresses.length > 0) setSelectedAddressId(profile.addresses[0].id);
+      }
+    });
   }, []);
+
+  const loadFullProductData = async (items: any[]) => {
+    if (items.length === 0) return;
+    const ids = items.map(i => i.id);
+    const products = await getProductsForCart(ids);
+    setFullProductsData(products);
+  };
 
   useEffect(() => {
     if (addId) {
       setIsDirectBuy(true);
-      // Direct Buy mode: Ignore persistent cart, load just this product
       getProductForCart(Number(addId)).then(product => {
         if (product) {
           const savedDirect = sessionStorage.getItem('brownis_direct_buy');
@@ -59,31 +62,31 @@ function CartCheckoutInner() {
           let items: any[] = [];
           
           if (timestamp && currentDirect && currentDirect.t === timestamp) {
-            // Same click (e.g. page refresh). Just load the session state.
             items = currentDirect.items || [];
           } else {
-            // New click
             items = currentDirect?.items ? [...currentDirect.items] : [];
             const existingIndex = items.findIndex((i: any) => i.id === product.id);
             if (existingIndex !== -1) {
-               // Increase quantity
                items[existingIndex] = { ...items[existingIndex], qty: items[existingIndex].qty + 1 };
             } else {
-               // Add new product
                items.push({ id: product.id, name: product.name, price: Number(product.price), qty: 1, image_url: product.image_url });
             }
           }
           
           setCartItems(items);
+          loadFullProductData(items);
           sessionStorage.setItem('brownis_direct_buy', JSON.stringify({ t: timestamp, items }));
         }
         setIsCartLoaded(true);
       });
     } else {
-      // Cart Checkout mode: Load from persistent cart
       const saved = localStorage.getItem('brownis_cart');
       if (saved) {
-        try { setCartItems(JSON.parse(saved)); } catch (e) {}
+        try { 
+          const parsed = JSON.parse(saved);
+          setCartItems(parsed); 
+          loadFullProductData(parsed);
+        } catch (e) {}
       }
       setIsCartLoaded(true);
     }
@@ -128,140 +131,46 @@ function CartCheckoutInner() {
     });
   };
 
-  const subtotal = cartItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
-  const effectiveShipping = deliveryMode === "PICKUP" ? 0 : (useFreeShipping && isJogja ? 0 : shippingCost);
-  const total = subtotal + effectiveShipping + uniqueCode;
-
   useEffect(() => {
-    // Calculate H-2 for minimum date
     const date = new Date();
     date.setDate(date.getDate() + 2);
-    date.setHours(10, 0, 0, 0); // Default to 10:00 AM
-    
-    // Format for datetime-local input (YYYY-MM-DDThh:mm) in local timezone
+    date.setHours(10, 0, 0, 0); 
     const offset = date.getTimezoneOffset() * 60000;
     const localISOTime = (new Date(date.getTime() - offset)).toISOString().slice(0, 16);
-    
     setMinDate(localISOTime);
     setDeliveryDate(localISOTime);
   }, []);
 
-  // Dynamically load Leaflet script and CSS when map toggle is active
-  useEffect(() => {
-    if (!mapOpen || leafletLoaded) return;
+  // Compute specific logic based on selected address
+  const selectedAddress = addresses.find(a => a.id === selectedAddressId);
+  const isOutsideJogja = deliveryMode === "DELIVERY" && selectedAddress && !selectedAddress.is_jogja;
 
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-    document.head.appendChild(link);
-
-    const script = document.createElement("script");
-    script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-    script.onload = () => {
-      setLeafletLoaded(true);
-    };
-    document.body.appendChild(script);
-  }, [mapOpen, leafletLoaded]);
-
-  // Handle Map and Marker initialization and updates
-  useEffect(() => {
-    if (!leafletLoaded || !mapOpen) return;
-
-    const L = (window as any).L;
-    if (!L) return;
-
-    const mapContainer = document.getElementById("checkout-map");
-    if (!mapContainer) return;
-
-    const storeCoords: [number, number] = [-7.7647423, 110.3494548]; // Jalan Jambon, Gamping
-    const initialCoords: [number, number] = [customerCoords.lat, customerCoords.lng];
-
-    const map = L.map("checkout-map").setView(initialCoords, 14);
-
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: '© OpenStreetMap contributors'
-    }).addTo(map);
-
-    // Custom pins: black/gold for store, draggable blue for customer
-    const storeMarker = L.marker(storeCoords, {
-      title: "Toko Brownis Cinta (Gamping)"
-    }).addTo(map).bindPopup("<b>Toko Brownis Cinta</b><br/>Jalan Jambon, Gamping").openPopup();
-
-    const customerMarker = L.marker(initialCoords, {
-      draggable: true,
-      title: "Geser ke Lokasi Anda"
-    }).addTo(map).bindPopup("<b>Lokasi Pengiriman Anda</b><br/>Geser pin ini untuk mengubah lokasi.");
-
-    customerMarker.on("dragend", async (e: any) => {
-      const position = e.target.getLatLng();
-      const newLat = position.lat;
-      const newLng = position.lng;
-      setCustomerCoords({ lat: newLat, lng: newLng });
-
-      // Run reverse-lookup to Nominatim OpenStreetMap geocoder API
-      try {
-        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${newLat}&lon=${newLng}&zoom=18&addressdetails=1`);
-        if (res.ok) {
-          const data = await res.json();
-          const displayAddress = data.display_name || `Koordinat: ${newLat.toFixed(5)}, ${newLng.toFixed(5)}`;
-          setAddress(`${displayAddress}, ${newLat.toFixed(7)}, ${newLng.toFixed(7)}`);
-        } else {
-          setAddress(`Koordinat: ${newLat.toFixed(7)}, ${newLng.toFixed(7)}`);
-        }
-      } catch (err) {
-        setAddress(`Koordinat: ${newLat.toFixed(7)}, ${newLng.toFixed(7)}`);
-      }
-    });
-
-    return () => {
-      map.remove();
-    };
-  }, [leafletLoaded, mapOpen]);
-
-  // Village search debounce
-  useEffect(() => {
-    if (villageQuery.length < 3) { setVillageResults([]); return; }
-    const timer = setTimeout(async () => {
-      setVillageLoading(true);
-      try {
-        const res = await fetch(`/api/villages?search=${encodeURIComponent(villageQuery)}`);
-        const data = await res.json();
-        setVillageResults(data.results || []);
-      } catch { setVillageResults([]); }
-      finally { setVillageLoading(false); }
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [villageQuery]);
-
-  const calculateShipping = async () => {
-    setIsCalculating(true);
-    try {
-      const body: any = { destination: address, weight: 1000 };
-      if (selectedVillage) body.destination_village_code = selectedVillage.code;
-
-      const res = await fetch("/api/shipping", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-      });
-      const data = await res.json();
-      if (data.success) {
-        setShippingCost(data.cost);
-        setShippingInfo({
-          estimated_days: data.estimated_days,
-          service: data.service,
-          is_estimate: data.is_estimate,
-          couriers: data.couriers,
-        });
-      } else {
-        alert("Gagal menghitung ongkos kirim: " + (data.error || "Error tidak diketahui"));
-      }
-    } catch (error: any) {
-      alert("Gagal menghitung ongkos kirim: " + error.message);
-    } finally {
-      setIsCalculating(false);
+  // Enhance cart items with server data and custom pricing
+  let hasShortExpiration = false;
+  
+  const enhancedCartItems = cartItems.map(item => {
+    const serverProduct = fullProductsData.find(p => p.id === item.id);
+    const expirationDays = serverProduct?.expiration_days || 0;
+    
+    // Check if outside Jogja and expiration is less than 7
+    if (isOutsideJogja && expirationDays < 7) {
+      hasShortExpiration = true;
     }
-  };
+
+    // Adjust price if outside Jogja based on true server price, not localStorage
+    const basePrice = serverProduct ? Number(serverProduct.price) : Number(item.price);
+    const displayPrice = isOutsideJogja ? basePrice + 5500 : basePrice;
+
+    return {
+      ...item,
+      expiration_days: expirationDays,
+      displayPrice,
+      subtotal: displayPrice * item.qty
+    };
+  });
+
+  const cartSubtotal = enhancedCartItems.reduce((sum, item) => sum + item.subtotal, 0);
+  const total = cartSubtotal + uniqueCode;
 
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -277,24 +186,38 @@ function CartCheckoutInner() {
       return;
     }
 
+    if (deliveryMode === "DELIVERY" && !selectedAddress) {
+      alert("Silakan pilih atau tambahkan alamat pengiriman terlebih dahulu di halaman Profil.");
+      return;
+    }
+
+    if (isOutsideJogja && hasShortExpiration) {
+      alert("Pesanan tidak dapat dilanjutkan. Pengiriman ke luar DI Yogyakarta hanya mendukung produk dengan masa expired minimal 7 hari.");
+      return;
+    }
+
     const userId = parseInt((session.user as any).id);
     if (isNaN(userId)) {
       alert("Gagal memproses user ID. Silakan coba login kembali.");
       return;
     }
 
-    const baseService = deliveryMode === "PICKUP" ? 'Ambil Sendiri di Toko' : (useFreeShipping && isJogja ? 'Gratis Ongkir (Wilayah Jogja)' : (shippingInfo?.service || 'JNE Reguler'));
+    const baseService = deliveryMode === "PICKUP" 
+      ? 'Ambil Sendiri di Toko' 
+      : (isOutsideJogja ? 'Pengiriman Luar DI Yogyakarta' : 'Pengiriman DI Yogyakarta');
+      
     const formattedDate = new Date(deliveryDate).toLocaleString("id-ID", { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).replace(/\./g, ':');
+    const shippingService = `${baseService} (Waktu: ${formattedDate})${selectedAddress ? ` | Penerima: ${selectedAddress.recipient_name} | Alamat: ${selectedAddress.full_address}` : ''}`;
     
     const orderData = {
       userId,
       totalPrice: total,
-      shippingCost: effectiveShipping,
-      shippingService: `${baseService} (Waktu: ${formattedDate})`,
-      items: cartItems.map(item => ({
+      shippingCost: 0, // Shipping is replaced by product surcharge
+      shippingService: shippingService,
+      items: enhancedCartItems.map(item => ({
         productId: item.id,
         quantity: item.qty,
-        price: item.price
+        price: item.displayPrice // Using the calculated display price (with 7k surcharge if outside Jogja)
       }))
     };
 
@@ -304,7 +227,7 @@ function CartCheckoutInner() {
     } else {
       if (!isDirectBuy) {
         localStorage.removeItem('brownis_cart');
-        window.dispatchEvent(new Event('cart_updated')); // Force navbar update
+        window.dispatchEvent(new Event('cart_updated')); 
       } else {
         sessionStorage.removeItem('brownis_direct_buy');
       }
@@ -314,10 +237,10 @@ function CartCheckoutInner() {
     }
   };
 
+  if (!isCartLoaded) return <div style={{ padding: 40, textAlign: "center" }}>Memuat checkout...</div>;
+
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "var(--background)", fontFamily: "var(--font-sans)", display: "flex", flexDirection: "column" }}>
-      
-      {/* Header Navigation */}
       <nav style={{
         position: "sticky", top: 0, zIndex: 50,
         backgroundColor: "rgba(255,255,255,0.95)",
@@ -329,16 +252,12 @@ function CartCheckoutInner() {
           <Link href="/" style={{ fontFamily: "var(--font-serif)", fontWeight: 700, color: "var(--primary)", fontSize: 18, textDecoration: "none" }}>
             Brownis Cinta
           </Link>
-          <Link 
-            href="/" 
-            style={{ fontSize: 13, fontWeight: 700, color: "var(--secondary)", display: "flex", alignItems: "center", gap: 6, textDecoration: "none" }}
-          >
+          <Link href="/" style={{ fontSize: 13, fontWeight: 700, color: "var(--secondary)", display: "flex", alignItems: "center", gap: 6, textDecoration: "none" }}>
             <ChevronLeft size={16} /> Kembali ke Beranda
           </Link>
         </div>
       </nav>
 
-      {/* Main Checkout Flow */}
       <main style={{ flex: 1, paddingTop: 32, paddingBottom: 40 }}>
         <div className="container">
           <div style={{ marginBottom: 28 }}>
@@ -348,17 +267,27 @@ function CartCheckoutInner() {
           
           <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 24, alignItems: "start" }}>
             
-            {/* Left Column: Cart Items & Form */}
             <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-            
+              
               {/* Shopping List */}
               <div className="card" style={{ padding: "24px 28px" }}>
                 <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--secondary)", display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid var(--border)", paddingBottom: 12, marginBottom: 16 }}>
                   <ShoppingBag size={16} color="var(--primary)" /> Daftar Belanja Anda
                 </h2>
+
+                {isOutsideJogja && (
+                  <div style={{ padding: 12, backgroundColor: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, marginBottom: 16 }}>
+                    <p style={{ fontSize: 12, color: "#d97706", fontWeight: 700, margin: 0 }}>
+                      ⚠️ Pengiriman Luar DI Yogyakarta
+                    </p>
+                    <p style={{ fontSize: 11, color: "#b45309", margin: "4px 0 0 0" }}>
+                      Harga setiap produk otomatis ditambah Rp 5.500 untuk biaya penanganan luar kota. Pastikan produk yang dipilih memiliki masa expired minimal 7 hari.
+                    </p>
+                  </div>
+                )}
                 
                 <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                  {cartItems.map((item) => (
+                  {enhancedCartItems.map((item) => (
                     <div key={item.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                         <div style={{ width: 52, height: 52, borderRadius: 12, border: "1px solid var(--border)", overflow: "hidden", backgroundColor: "#f9fafb", flexShrink: 0 }}>
@@ -370,7 +299,10 @@ function CartCheckoutInner() {
                           />
                         </div>
                         <div style={{ flex: 1 }}>
-                          <h3 style={{ fontSize: 14, fontWeight: 700, color: "#111827", marginBottom: 6 }}>{item.name}</h3>
+                          <h3 style={{ fontSize: 14, fontWeight: 700, color: "#111827", marginBottom: 2 }}>{item.name}</h3>
+                          <p style={{ fontSize: 11, color: item.expiration_days >= 7 ? "#10b981" : "#ef4444", marginBottom: 6, fontWeight: 600 }}>
+                            Masa Expired: {item.expiration_days} Hari
+                          </p>
                           
                           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                             <div style={{ display: "flex", alignItems: "center", border: "1px solid var(--border)", borderRadius: 6, overflow: "hidden" }}>
@@ -383,7 +315,12 @@ function CartCheckoutInner() {
                         </div>
                       </div>
                       <div style={{ fontWeight: 700, color: "var(--primary)", fontSize: 15, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-                        Rp {(item.price * item.qty).toLocaleString('id-ID')}
+                        Rp {item.subtotal.toLocaleString('id-ID')}
+                        {isOutsideJogja && (
+                          <span style={{ fontSize: 10, color: "#9ca3af", fontWeight: 400 }}>
+                            (Rp {item.displayPrice.toLocaleString('id-ID')} / pcs)
+                          </span>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -412,7 +349,6 @@ function CartCheckoutInner() {
                     <MapPin size={16} color="var(--primary)" /> Informasi Pengiriman & Jadwal
                   </h2>
                   
-                  {/* Date Selection */}
                   <div style={{ backgroundColor: "#fff1f2", padding: 16, borderRadius: 12, border: "1px solid #fecdd3" }}>
                     <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: "var(--primary)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
                       <Calendar size={14} /> Waktu Pengiriman / Pengambilan (Indent H-2)
@@ -430,7 +366,6 @@ function CartCheckoutInner() {
                     </p>
                   </div>
 
-                  {/* Delivery Mode Toggle */}
                   <div style={{ display: "flex", gap: 12 }}>
                     <button 
                       type="button" 
@@ -448,270 +383,167 @@ function CartCheckoutInner() {
                     </button>
                   </div>
 
-                  {deliveryMode === "DELIVERY" ? (
-                    <>
-                      {/* Delivery Address */}
-                      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <label style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5 }}>Alamat Lengkap Pengiriman</label>
-                      <button
-                        type="button"
-                        onClick={() => setMapOpen(!mapOpen)}
-                        style={{ fontSize: 12, fontWeight: 700, color: "var(--primary)", background: "transparent", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
-                      >
-                        📍 {mapOpen ? "Tutup Peta" : "Pilih dari Peta"}
-                      </button>
-                    </div>
-
-                    {mapOpen && (
-                      <div style={{ marginBottom: 4 }}>
-                        <div
-                          id="checkout-map"
-                          style={{ width: "100%", height: 220, borderRadius: 12, border: "1px solid #e5e7eb", backgroundColor: "#f9fafb", position: "relative", zIndex: 1 }}
-                        >
-                          {!leafletLoaded && (
-                            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(249,250,251,0.8)", fontSize: 12, fontWeight: 600, color: "#9ca3af" }}>
-                              🔄 Memuat peta interaktif...
-                            </div>
-                          )}
+                  {deliveryMode === "DELIVERY" && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 8 }}>
+                      <label style={{ fontSize: 12, fontWeight: 700, color: "#4b5563" }}>Pilih Alamat Pengiriman</label>
+                      
+                      {addresses.length === 0 ? (
+                        <div style={{ padding: 16, border: "1px dashed var(--border)", borderRadius: 12, textAlign: "center" }}>
+                          <p style={{ fontSize: 12, color: "#6b7280", marginBottom: 8 }}>Belum ada alamat tersimpan.</p>
+                          <Link href="/customer/profile" style={{ fontSize: 12, fontWeight: 700, color: "var(--primary)", textDecoration: "underline" }}>
+                            Tambah Alamat di Profil
+                          </Link>
                         </div>
-                        <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 8 }}>
-                          👉 Geser pin biru ke lokasi Anda. Alamat akan terupdate otomatis.
-                        </p>
-                      </div>
-                    )}
-
-                    <textarea
-                      style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: "1.5px solid #e5e7eb", fontSize: 14, outline: "none", fontFamily: "var(--font-sans)", boxSizing: "border-box", backgroundColor: "#f9fafb", resize: "none" }}
-                      required
-                      value={address}
-                      onChange={(e) => setAddress(e.target.value)}
-                      rows={2}
-                      placeholder="Tulis alamat lengkap Anda..."
-                    ></textarea>
-
-                    {/* Village Code Search */}
-                    <div>
-                      <label style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5, display: "block", marginBottom: 6 }}>
-                        Kelurahan / Desa Tujuan{" "}
-                        <span style={{ color: "#ef4444", textTransform: "none", fontWeight: 400 }}>*wajib untuk hitung ongkir</span>
-                      </label>
-                      <div style={{ position: "relative" }}>
-                        <input
-                          type="text"
-                          value={selectedVillage ? `${selectedVillage.name}, ${selectedVillage.district}, ${selectedVillage.regency}` : villageQuery}
-                          onChange={(e) => { setSelectedVillage(null); setVillageQuery(e.target.value); setUseFreeShipping(false); }}
-                          onFocus={() => { if (selectedVillage) setVillageQuery(''); setSelectedVillage(null); setUseFreeShipping(false); }}
-                          placeholder="Cari nama desa/kelurahan (min 3 huruf)..."
-                          style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: "1.5px solid #e5e7eb", fontSize: 14, outline: "none", fontFamily: "var(--font-sans)", boxSizing: "border-box" }}
-                        />
-                        {villageLoading && (
-                          <span style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", fontSize: 12, color: "#9ca3af" }}>Mencari...</span>
-                        )}
-                        {selectedVillage && (
-                          <span style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", fontSize: 14, color: "#10b981", fontWeight: 700 }}>✓</span>
-                        )}
-                      </div>
-
-                      {villageResults.length > 0 && !selectedVillage && (
-                        <div style={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: 12, boxShadow: "0 4px 20px rgba(0,0,0,0.1)", maxHeight: 180, overflowY: "auto", marginTop: 4 }}>
-                          {villageResults.map((v: any) => (
-                            <button
-                              key={v.code}
-                              type="button"
-                              onClick={() => {
-                                setSelectedVillage({ code: v.code, name: v.name, district: v.district, regency: v.regency, province: v.province || '' });
-                                setVillageQuery('');
-                                setVillageResults([]);
-                                setUseFreeShipping(false);
-                                setShippingCost(0);
-                                setShippingInfo(null);
-                              }}
-                              style={{ width: "100%", textAlign: "left", padding: "10px 16px", borderBottom: "1px solid #f3f4f6", background: "transparent", borderTop: "none", borderLeft: "none", borderRight: "none", cursor: "pointer" }}
-                            >
-                              <p style={{ fontWeight: 700, fontSize: 14, color: "var(--secondary)", margin: 0 }}>{v.name}</p>
-                              <p style={{ fontSize: 11, color: "#9ca3af", margin: "2px 0 0" }}>{v.district}, {v.regency}, {v.province}</p>
-                            </button>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                          {addresses.map(addr => (
+                            <label key={addr.id} style={{
+                              display: "flex", alignItems: "flex-start", gap: 12, padding: 16, borderRadius: 12,
+                              border: selectedAddressId === addr.id ? "2px solid var(--primary)" : "1px solid #e5e7eb",
+                              backgroundColor: selectedAddressId === addr.id ? "#fff1f2" : "#ffffff",
+                              cursor: "pointer", transition: "all 0.2s"
+                            }}>
+                              <input 
+                                type="radio" 
+                                name="addressSelection" 
+                                checked={selectedAddressId === addr.id}
+                                onChange={() => setSelectedAddressId(addr.id)}
+                                style={{ width: 16, height: 16, accentColor: "var(--primary)", marginTop: 2 }}
+                              />
+                              <div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                                  <span style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>{addr.recipient_name}</span>
+                                  <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4, backgroundColor: addr.is_jogja ? "#ecfdf5" : "#f3f4f6", color: addr.is_jogja ? "#059669" : "#6b7280", fontWeight: 700 }}>
+                                    {addr.is_jogja ? "DI Yogyakarta" : "Luar Yogyakarta"}
+                                  </span>
+                                </div>
+                                <p style={{ fontSize: 12, color: "#6b7280", marginBottom: 2 }}>{addr.phone}</p>
+                                <p style={{ fontSize: 12, color: "#6b7280", lineHeight: 1.4 }}>{addr.full_address}</p>
+                              </div>
+                            </label>
                           ))}
+                          <Link href="/customer/profile" style={{ fontSize: 12, fontWeight: 700, color: "var(--primary)", textAlign: "right", display: "block" }}>
+                            + Kelola Alamat Baru
+                          </Link>
                         </div>
                       )}
-                      {villageQuery.length >= 3 && !villageLoading && villageResults.length === 0 && !selectedVillage && (
-                        <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>Desa tidak ditemukan. Coba kata kunci lain.</p>
-                      )}
-                    </div>
 
-                    {selectedVillage && (
-                      <div style={{
-                        display: "flex", alignItems: "flex-start", gap: 12, padding: 16, borderRadius: 12, border: "1px solid",
-                        backgroundColor: isJogja ? "#ecfdf5" : "#f9fafb", borderColor: isJogja ? "#a7f3d0" : "#e5e7eb",
-                        opacity: isJogja ? 1 : 0.6,
-                      }}>
-                        <input
-                          type="checkbox"
-                          id="free-shipping-check"
-                          checked={useFreeShipping && isJogja}
-                          disabled={!isJogja}
-                          onChange={(e) => {
-                            if (!isJogja) return;
-                            setUseFreeShipping(e.target.checked);
-                            if (e.target.checked) {
-                              setShippingCost(0);
-                              setShippingInfo({ estimated_days: 'Hari ini / Besok', service: 'Gratis Ongkir' });
-                            } else {
-                              setShippingCost(0);
-                              setShippingInfo(null);
-                            }
-                          }}
-                          style={{ width: 16, height: 16, accentColor: "#059669", cursor: isJogja ? "pointer" : "not-allowed", marginTop: 2, flexShrink: 0 }}
-                        />
-                        <label htmlFor="free-shipping-check" style={{ fontSize: 12, lineHeight: 1.5, cursor: isJogja ? "pointer" : "not-allowed" }}>
-                          {isJogja ? (
-                            <>
-                              <span style={{ fontWeight: 700, color: "#047857", display: "block" }}>🎉 Gratis Ongkir untuk Wilayah Yogyakarta!</span>
-                              <span style={{ color: "#059669", fontWeight: 600 }}>Centang untuk menggunakan pengiriman gratis ke {selectedVillage.regency}.</span>
-                            </>
-                          ) : (
-                            <>
-                              <span style={{ fontWeight: 700, color: "#6b7280", display: "block" }}>🚫 Gratis Ongkir tidak tersedia</span>
-                              <span style={{ color: "#9ca3af", fontWeight: 600 }}>Promo gratis ongkir hanya untuk DI Yogyakarta. Tujuan Anda ({selectedVillage.province}) tidak memenuhi syarat.</span>
-                            </>
-                          )}
-                        </label>
-                      </div>
-                    )}
-                  </div>
-                </>
-              ) : (
-                    <div style={{ backgroundColor: "#ecfdf5", padding: 16, borderRadius: 12, border: "1px solid #a7f3d0", textAlign: "center" }}>
-                      <p style={{ fontWeight: 700, color: "#047857", fontSize: 13, marginBottom: 4 }}>✅ Anda memilih Ambil di Toko</p>
-                      <p style={{ fontSize: 11, color: "#059669", lineHeight: 1.5 }}>
-                        Pesanan Anda bisa diambil di toko pada tanggal pengiriman yang dipilih. Ongkos kirim otomatis menjadi Rp 0.
-                      </p>
+                      {isOutsideJogja && hasShortExpiration && (
+                        <div style={{ padding: 16, backgroundColor: "#fef2f2", border: "1px solid #f87171", borderRadius: 12, display: "flex", gap: 12, alignItems: "flex-start", marginTop: 8 }}>
+                          <AlertTriangle size={20} color="#dc2626" style={{ flexShrink: 0 }} />
+                          <div>
+                            <p style={{ fontSize: 13, fontWeight: 700, color: "#b91c1c", margin: "0 0 4px 0" }}>Tidak Dapat Melanjutkan Checkout</p>
+                            <p style={{ fontSize: 12, color: "#dc2626", margin: 0, lineHeight: 1.5 }}>
+                              Alamat tujuan berada di luar DI Yogyakarta, namun terdapat produk di keranjang Anda yang memiliki masa expired di bawah 7 hari. Silakan hapus produk tersebut untuk melanjutkan.
+                            </p>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
-                  {/* Shipping Button */}
-                  {deliveryMode === "DELIVERY" && (
-                    <button
-                      type="button"
-                      onClick={calculateShipping}
-                      disabled={isCalculating}
-                      style={{
-                        width: "100%", padding: "12px 20px", borderRadius: 12, border: "1.5px solid var(--primary)",
-                        backgroundColor: "transparent", color: "var(--primary)", fontSize: 14, fontWeight: 700,
-                        cursor: isCalculating ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                        opacity: isCalculating ? 0.6 : 1, transition: "background-color 0.2s"
-                      }}
-                    >
-                      <Truck size={16} /> {isCalculating ? 'Menghitung Ongkir...' : selectedVillage ? `Hitung Ongkir ke ${selectedVillage.name}` : 'Hitung Ongkos Kirim'}
-                    </button>
+                  {deliveryMode === "PICKUP" && (
+                    <div style={{ backgroundColor: "#ecfdf5", padding: 16, borderRadius: 12, border: "1px solid #a7f3d0", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+                      <div>
+                        <p style={{ fontWeight: 700, color: "#047857", fontSize: 13, marginBottom: 4 }}>✅ Anda memilih Ambil di Toko</p>
+                        <p style={{ fontSize: 11, color: "#059669", lineHeight: 1.5, margin: 0 }}>
+                          Pesanan Anda bisa diambil di toko pada tanggal pengiriman yang dipilih.
+                        </p>
+                      </div>
+                      <div style={{ backgroundColor: "#ffffff", padding: "12px 16px", borderRadius: 8, border: "1px solid #6ee7b7", width: "100%" }}>
+                        <p style={{ fontWeight: 700, fontSize: 12, color: "#166534", marginBottom: 4 }}>Lokasi Pengambilan:</p>
+                        <p style={{ fontSize: 12, color: "#15803d", marginBottom: 12, lineHeight: 1.4 }}>
+                          Toko Brownis Cinta<br/>
+                          Jalan Jambon, Gamping
+                        </p>
+                        <a href="https://share.google/9ew7ETX5utaPmuVKP" target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: "white", backgroundColor: "#059669", padding: "8px 16px", borderRadius: 8, textDecoration: "none", transition: "background-color 0.2s" }}>
+                          📍 Buka Peta Toko (Google Maps)
+                        </a>
+                      </div>
+                    </div>
                   )}
                 </div>
               </form>
             </div>
 
-          {/* Right Column: Summary & Payment */}
-          <div>
-            <div className="card" style={{ position: "sticky", top: 80, padding: "24px 28px" }}>
-              <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--secondary)", display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid var(--border)", paddingBottom: 12, marginBottom: 16 }}>
-                <CreditCard size={16} color="var(--primary)" /> Ringkasan Pembayaran
-              </h2>
-              
-              <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20 }}>
-                <div style={{ display: "flex", justifyItems: "center", justifyContent: "space-between", fontSize: 13, color: "#6b7280" }}>
-                  <span style={{ fontWeight: 600 }}>Subtotal</span>
-                  <span style={{ fontWeight: 700, color: "var(--secondary)" }}>Rp {subtotal.toLocaleString('id-ID')}</span>
-                </div>
+            <div>
+              <div className="card" style={{ position: "sticky", top: 80, padding: "24px 28px" }}>
+                <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--secondary)", display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid var(--border)", paddingBottom: 12, marginBottom: 16 }}>
+                  <CreditCard size={16} color="var(--primary)" /> Ringkasan Pembayaran
+                </h2>
                 
-                <div style={{ display: "flex", justifyItems: "center", justifyContent: "space-between", fontSize: 13, color: "#6b7280", borderBottom: "1px dashed #e5e7eb", paddingBottom: 16 }}>
-                  <div>
-                    <span style={{ fontWeight: 600, display: "block" }}>
-                      {deliveryMode === "PICKUP" ? '🏬 Ambil Sendiri di Toko' : (useFreeShipping && isJogja ? '🎉 Gratis Ongkir' : (shippingInfo?.service || 'Ongkos Kirim'))}
-                    </span>
-                    {shippingInfo && !useFreeShipping && deliveryMode === "DELIVERY" && (
-                      <span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 600, display: "block", marginTop: 2 }}>
-                        {shippingInfo.estimated_days}{shippingInfo.is_estimate ? ' (estimasi)' : ''}
+                <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 20 }}>
+                  <div style={{ display: "flex", justifyItems: "center", justifyContent: "space-between", fontSize: 13, color: "#6b7280" }}>
+                    <span style={{ fontWeight: 600 }}>Subtotal Produk</span>
+                    <span style={{ fontWeight: 700, color: "var(--secondary)" }}>Rp {cartSubtotal.toLocaleString('id-ID')}</span>
+                  </div>
+                  
+                  <div style={{ display: "flex", justifyItems: "center", justifyContent: "space-between", fontSize: 13, color: "#6b7280", borderBottom: "1px dashed #e5e7eb", paddingBottom: 16 }}>
+                    <div>
+                      <span style={{ fontWeight: 600, display: "block" }}>
+                        Metode Pengiriman
                       </span>
-                    )}
-                    {useFreeShipping && isJogja && deliveryMode === "DELIVERY" && (
-                      <span style={{ fontSize: 11, color: "#10b981", fontWeight: 700, display: "block", marginTop: 2 }}>Wilayah Yogyakarta</span>
-                    )}
+                      {deliveryMode === "PICKUP" && <span style={{ fontSize: 11, color: "#10b981", fontWeight: 700, display: "block", marginTop: 2 }}>Ambil di Toko</span>}
+                      {deliveryMode === "DELIVERY" && !isOutsideJogja && <span style={{ fontSize: 11, color: "#10b981", fontWeight: 700, display: "block", marginTop: 2 }}>Wilayah DI Yogyakarta</span>}
+                      {deliveryMode === "DELIVERY" && isOutsideJogja && <span style={{ fontSize: 11, color: "#f59e0b", fontWeight: 700, display: "block", marginTop: 2 }}>Luar DI Yogyakarta</span>}
+                    </div>
+                    <span style={{ fontWeight: 700, color: "#d1d5db" }}>-</span>
                   </div>
-                  <span style={{ fontWeight: 700, color: (useFreeShipping && isJogja) || deliveryMode === "PICKUP" ? "#d1d5db" : "var(--secondary)", textDecoration: (useFreeShipping && isJogja) || deliveryMode === "PICKUP" ? "line-through" : "none" }}>
-                    {deliveryMode === "PICKUP" ? `Rp 0` : (shippingCost > 0 ? `Rp ${shippingCost.toLocaleString('id-ID')}` : (useFreeShipping && isJogja ? `Rp 0` : '-'))}
-                  </span>
-                </div>
 
-                {uniqueCode > 0 && (
-                  <div style={{ display: "flex", justifyItems: "center", justifyContent: "space-between", fontSize: 13, color: "#6b7280", borderBottom: "1px dashed #e5e7eb", paddingBottom: 16, paddingTop: 16 }}>
-                    <span style={{ fontWeight: 600 }}>Kode Unik (Untuk Verifikasi)</span>
-                    <span style={{ fontWeight: 700, color: "#10b981" }}>Rp {uniqueCode.toLocaleString('id-ID')}</span>
+                  {uniqueCode > 0 && (
+                    <div style={{ display: "flex", justifyItems: "center", justifyContent: "space-between", fontSize: 13, color: "#6b7280", borderBottom: "1px dashed #e5e7eb", paddingBottom: 16, paddingTop: 16 }}>
+                      <span style={{ fontWeight: 600 }}>Kode Unik (Untuk Verifikasi)</span>
+                      <span style={{ fontWeight: 700, color: "#10b981" }}>Rp {uniqueCode.toLocaleString('id-ID')}</span>
+                    </div>
+                  )}
+
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 16 }}>
+                    <span style={{ fontWeight: 700, color: "var(--secondary)", fontSize: 15 }}>Total Tagihan</span>
+                    <span style={{ fontWeight: 800, color: "var(--primary)", fontSize: 22 }}>
+                      Rp {total.toLocaleString('id-ID')}
+                    </span>
                   </div>
-                )}
-
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 16 }}>
-                  <span style={{ fontWeight: 700, color: "var(--secondary)", fontSize: 15 }}>Total Tagihan</span>
-                  <span style={{ fontWeight: 800, color: "var(--primary)", fontSize: 22 }}>
-                    Rp {total.toLocaleString('id-ID')}
-                  </span>
                 </div>
-              </div>
 
-              {/* Payment Instructions */}
-              <div style={{ backgroundColor: "#f9fafb", padding: 16, borderRadius: 12, border: "1px solid #e5e7eb", marginBottom: 20 }}>
-                <h3 style={{ fontWeight: 700, color: "var(--secondary)", fontSize: 13, marginBottom: 4 }}>Instruksi Pembayaran</h3>
-                <p style={{ fontSize: 11, color: "#9ca3af", lineHeight: 1.5, marginBottom: 12 }}>
-                  Transfer persis sebesar total tagihan ke rekening berikut:
-                </p>
-                <div style={{ backgroundColor: "white", padding: 14, borderRadius: 12, border: "1px solid #fecdd3", textAlign: "center", boxShadow: "0 2px 8px rgba(0,0,0,0.02)" }}>
-                  <p style={{ fontWeight: 800, color: "var(--primary)", fontSize: 18, fontFamily: "monospace", letterSpacing: 1 }}>BCA 2140639403</p>
-                  <p style={{ color: "var(--secondary)", fontSize: 13, fontWeight: 700, marginTop: 4 }}>a/n Arif Febriyanto</p>
+                <div style={{ backgroundColor: "#f9fafb", padding: 16, borderRadius: 12, border: "1px solid #e5e7eb", marginBottom: 20 }}>
+                  <h3 style={{ fontWeight: 700, color: "var(--secondary)", fontSize: 13, marginBottom: 4 }}>Instruksi Pembayaran</h3>
+                  <p style={{ fontSize: 11, color: "#9ca3af", lineHeight: 1.5, marginBottom: 12 }}>
+                    Transfer persis sebesar total tagihan ke rekening berikut:
+                  </p>
+                  <div style={{ backgroundColor: "white", padding: "20px 14px", borderRadius: 12, border: "1px solid #fecdd3", textAlign: "center", boxShadow: "0 4px 12px rgba(0,0,0,0.03)", display: "flex", flexDirection: "column", alignItems: "center" }}>
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/5/5c/Bank_Central_Asia.svg" alt="BCA Logo" style={{ height: 28, marginBottom: 12 }} />
+                    <p style={{ fontWeight: 800, color: "#111827", fontSize: 22, fontFamily: "monospace", letterSpacing: 2, marginBottom: 4 }}>2140639403</p>
+                    <p style={{ color: "var(--secondary)", fontSize: 13, fontWeight: 700 }}>a/n Arif Febriyanto</p>
+                  </div>
                 </div>
-              </div>
 
-              {/* Submit Button */}
-              <button 
-                type="submit" 
-                form="checkout-form" 
-                style={{
-                  width: "100%", padding: "14px 20px", borderRadius: 12, border: "none",
-                  backgroundColor: "var(--primary)", color: "white", fontSize: 15, fontWeight: 700,
-                  cursor: (deliveryMode === "DELIVERY" && shippingCost === 0 && !(useFreeShipping && isJogja)) ? "not-allowed" : "pointer",
-                  display: "flex", alignItems: "center", justifyItems: "center", justifyContent: "center", gap: 8,
-                  opacity: (deliveryMode === "DELIVERY" && shippingCost === 0 && !(useFreeShipping && isJogja)) ? 0.5 : 1,
-                  boxShadow: "0 4px 16px rgba(139,28,49,0.25)"
-                }}
-                disabled={deliveryMode === "DELIVERY" && shippingCost === 0 && !(useFreeShipping && isJogja)}
-              >
-                Selesaikan Pesanan
-              </button>
-              
-              {deliveryMode === "DELIVERY" && shippingCost === 0 && !(useFreeShipping && isJogja) && (
-                <p style={{ textAlign: "center", fontSize: 11, color: "#ef4444", fontWeight: 600, marginTop: 12 }}>
-                  *Silakan hitung ongkos kirim terlebih dahulu.
-                </p>
-              )}
+                <button 
+                  type="submit" 
+                  form="checkout-form" 
+                  disabled={cartItems.length === 0 || (deliveryMode === "DELIVERY" && !selectedAddress) || (isOutsideJogja && hasShortExpiration)}
+                  style={{ 
+                    width: "100%", padding: "16px", borderRadius: 12, border: "none", 
+                    backgroundColor: "var(--primary)", color: "white", fontSize: 16, fontWeight: 700,
+                    cursor: (cartItems.length === 0 || (deliveryMode === "DELIVERY" && !selectedAddress) || (isOutsideJogja && hasShortExpiration)) ? "not-allowed" : "pointer", 
+                    opacity: (cartItems.length === 0 || (deliveryMode === "DELIVERY" && !selectedAddress) || (isOutsideJogja && hasShortExpiration)) ? 0.6 : 1, 
+                    boxShadow: "0 4px 14px rgba(139,28,49,0.3)" 
+                  }}
+                >
+                  Konfirmasi & Bayar Sekarang
+                </button>
+              </div>
             </div>
-          </div>
 
-        </div>
+          </div>
         </div>
       </main>
-
-      {/* Footer */}
-      <footer style={{ backgroundColor: "var(--secondary)", color: "white", marginTop: "auto" }}>
-        <div className="container" style={{ paddingTop: 28, paddingBottom: 28, textAlign: "center" }}>
-          <p style={{ fontSize: 12, color: "#9ca3af", fontWeight: 600 }}>© 2026 Brownis Cinta Official. All rights reserved.</p>
-        </div>
-      </footer>
-
     </div>
   );
 }
 
 export default function CartCheckout() {
   return (
-    <Suspense fallback={<div style={{ padding: 40, textAlign: "center", color: "#9ca3af", fontWeight: 700 }}>Memuat keranjang...</div>}>
+    <Suspense fallback={<div style={{ padding: 40, textAlign: "center" }}>Loading...</div>}>
       <CartCheckoutInner />
     </Suspense>
   );

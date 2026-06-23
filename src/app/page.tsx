@@ -1,14 +1,25 @@
 import Link from 'next/link';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { authOptions } from "@/lib/auth";
 import CartIcon from "@/components/CartIcon";
-import ProductActions from "@/components/ProductActions";
+import Catalog from "@/components/Catalog";
+import TopProductsSlider from "@/components/TopProductsSlider";
 
 export default async function Home() {
   const session = await getServerSession(authOptions);
 
   const rawProducts = await prisma.product.findMany({
+    include: {
+      orderItems: {
+        select: {
+          quantity: true,
+          order: {
+            select: { status: true }
+          }
+        }
+      }
+    },
     orderBy: [
       { display_order: "asc" },
       { createdAt: "desc" }
@@ -16,6 +27,8 @@ export default async function Home() {
   });
   
   let actionNeededCount = 0;
+  let isOutsideJogja = false;
+
   if (session?.user) {
     if (session.user.role === "OWNER") {
       actionNeededCount = await prisma.order.count({
@@ -28,19 +41,40 @@ export default async function Home() {
           status: { in: ["PENDING", "REFUND_REQUESTED", "SHIPPED"] }
         }
       });
+      
+      // Check primary address
+      const primaryAddress = await prisma.userAddress.findFirst({
+        where: {
+          user_id: parseInt(session.user.id as string),
+          is_primary: true
+        }
+      });
+      if (primaryAddress && primaryAddress.is_jogja === false) {
+        isOutsideJogja = true;
+      }
     }
   }
   
-  const dbProducts = rawProducts.map(p => ({
-    ...p,
-    price: Number(p.price)
-  }));
+  const dbProducts = rawProducts.map(p => {
+    const validStatuses = ["PAID", "APPROVED", "SHIPPED", "COMPLETED"];
+    const soldCount = p.orderItems
+      .filter(item => validStatuses.includes(item.order.status))
+      .reduce((sum, item) => sum + item.quantity, 0);
 
-  const products = dbProducts.length > 0 ? dbProducts : [
-    { id: 1, name: "Dessert Lumer Mini Size", price: 25000, image_url: "/dessert_lumer.png", description: "Choco Delight / Cookies & Cream / Say Cheese / Tiramissu Coffee", is_bestseller: true },
-    { id: 2, name: "Roti Ring Selai", price: 12000, image_url: "/roti_ring.png", description: "Dua Rasa, Hangatkan Keluarga Tercinta dengan Roti Lembut", is_bestseller: true },
-    { id: 3, name: "Brownies Choco Hitam Putih", price: 35000, image_url: "/hero_bg.png", description: "Best Seller Browcin Bakery dengan Cokelat Melimpah", is_bestseller: true },
-  ];
+    const basePrice = Number(p.price);
+    const displayPrice = isOutsideJogja ? basePrice + 5500 : basePrice;
+
+    return {
+      ...p,
+      price: displayPrice,
+      soldCount
+    };
+  });
+
+  const products = dbProducts;
+  
+  // Ambil 6 produk terlaris
+  const topProducts = [...products].sort((a, b) => (b.soldCount || 0) - (a.soldCount || 0)).slice(0, 6);
 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "var(--background)", display: "flex", flexDirection: "column" }}>
@@ -192,8 +226,13 @@ export default async function Home() {
         </div>
       </section>
 
+      {/* TOP SELLING SLIDER */}
+      {topProducts.length > 0 && (
+        <TopProductsSlider topProducts={topProducts} />
+      )}
+
       {/* PRODUCTS */}
-      <section id="products" style={{ paddingBottom: 64 }}>
+      <section id="products" style={{ paddingTop: 64, paddingBottom: 64 }}>
         <div className="container">
           <div style={{ textAlign: "center", marginBottom: 40 }}>
             <p style={{ fontSize: 11, color: "var(--primary)", fontWeight: 700, letterSpacing: 2, textTransform: "uppercase", marginBottom: 8 }}>
@@ -205,49 +244,7 @@ export default async function Home() {
             <p style={{ fontSize: 13, color: "var(--text-light)" }}>Terbuat dari bahan premium & dibuat fresh setiap harinya</p>
           </div>
 
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-            gap: 24,
-          }}>
-            {products.map((product) => (
-              <div key={product.id} className="card" style={{ display: "flex", flexDirection: "column" }}>
-                <div style={{ position: "relative", overflow: "hidden", height: 200, backgroundColor: "#f9fafb" }}>
-                  <img
-                    src={product.image_url || "/hero_bg.png"}
-                    alt={product.name}
-                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                  />
-                  {product.is_bestseller && (
-                    <span style={{
-                      position: "absolute", top: 12, right: 12,
-                      backgroundColor: "#f59e0b", color: "white",
-                      fontSize: 10, fontWeight: 700, padding: "4px 10px",
-                      borderRadius: 8, letterSpacing: 0.5, textTransform: "uppercase"
-                    }}>
-                      Best Seller ⭐
-                    </span>
-                  )}
-                </div>
-                <div style={{ padding: "20px 20px 18px", display: "flex", flexDirection: "column", flex: 1 }}>
-                  <h3 style={{ fontFamily: "var(--font-sans)", fontSize: 14, fontWeight: 700, color: "var(--secondary)", marginBottom: 6 }}>
-                    {product.name}
-                  </h3>
-                  <p style={{ fontSize: 12, color: "#9ca3af", lineHeight: 1.5, flex: 1 }}>
-                    {product.description}
-                  </p>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontWeight: 800, color: "var(--primary)", fontSize: 18 }}>
-                        Rp {Number(product.price).toLocaleString('id-ID')}
-                      </span>
-                    </div>
-                    {session?.user?.role !== "OWNER" && (
-                      <ProductActions product={product} />
-                    )}
-                  </div>
-                </div>
-            ))}
-          </div>
+          <Catalog products={products} session={session} isOutsideJogja={isOutsideJogja} />
         </div>
       </section>
 

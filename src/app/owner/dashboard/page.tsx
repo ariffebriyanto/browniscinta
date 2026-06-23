@@ -1,19 +1,63 @@
 import { prisma } from "@/lib/prisma";
 import DashboardClient from "./DashboardClient";
 
-export default async function OwnerDashboardPage() {
+export default async function OwnerDashboardPage({ searchParams }: { searchParams: Promise<any> }) {
+  const params = await searchParams;
+  const filter = params?.filter || "all";
+
   // 1. Basic Stats
   const totalUsers = await prisma.user.count({ where: { role: "CUSTOMER" } });
   const totalProducts = await prisma.product.count();
   const totalOrders = await prisma.order.count();
 
-  // 2. Total Revenue (exclude CANCELLED orders)
+  // 2. Total Revenue (only count valid paid orders)
   const orders = await prisma.order.findMany({
-    where: { status: { not: "CANCELLED" } },
-    select: { total_price: true, status: true, createdAt: true },
+    where: { 
+      status: { in: ["PAID", "APPROVED", "SHIPPED", "COMPLETED"] } 
+    },
+    select: { 
+      total_price: true, 
+      status: true, 
+      createdAt: true,
+      items: {
+        select: {
+          quantity: true,
+          price: true,
+          modal_price: true,
+        }
+      }
+    },
   });
 
-  const totalRevenue = orders.reduce((sum, o) => sum + Number(o.total_price), 0);
+  // Filter orders for summary cards
+  const now = new Date();
+  let summaryOrders = orders;
+  
+  if (filter === "today") {
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    summaryOrders = orders.filter(o => new Date(o.createdAt) >= startOfDay);
+  } else if (filter === "this_month") {
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    summaryOrders = orders.filter(o => new Date(o.createdAt) >= startOfMonth);
+  }
+
+  let totalRevenue = 0;
+  let totalMargin = 0;
+
+  for (const o of summaryOrders) {
+    totalRevenue += Number(o.total_price);
+    
+    let invoiceMargin = 0;
+    
+    for (const item of o.items) {
+      const modalPrice = Number(item.modal_price) || 0;
+      const itemCogs = modalPrice * item.quantity;
+      const itemRevenue = Number(item.price) * item.quantity;
+      invoiceMargin += (itemRevenue - itemCogs);
+    }
+    
+    totalMargin += invoiceMargin;
+  }
 
   // 3. Status Counts for pie/donut chart
   const statusCounts = await prisma.order.groupBy({
@@ -72,11 +116,13 @@ export default async function OwnerDashboardPage() {
 
   return (
     <DashboardClient
+      currentFilter={filter}
       stats={{
         totalUsers,
         totalProducts,
-        totalOrders,
+        totalOrders: summaryOrders.length,
         totalRevenue,
+        totalMargin,
       }}
       statusDistribution={{
         PENDING: statusMap["PENDING"] || 0,

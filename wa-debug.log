@@ -1,0 +1,7 @@
+[2026-06-16T11:51:11.494Z] SUCCESS to 6282113842783: {"success":false,"message":"Anda harus pairing dulu","data":{}}
+[2026-06-16T11:51:11.815Z] SUCCESS to 6281282386336: {"success":false,"message":"Anda harus pairing dulu","data":{}}
+[2026-06-16T11:54:48.287Z] SUCCESS to 6282113842783: {"success":true,"message":"Berhasil","data":{}}
+[2026-06-16T11:54:48.461Z] SUCCESS to 6281282386336: {"success":true,"message":"Berhasil","data":{}}
+[2026-06-16T15:00:15.461Z] SUCCESS to 6281282386336: {"success":true,"message":"Berhasil","data":{}}
+[2026-06-16T15:09:41.255Z] SUCCESS to 6281282386336: {"success":true,"message":"Berhasil","data":{}}
+[2026-06-16T15:10:07.208Z] SUCCESS to 6282113842783: {"success":true,"message":"Berhasil","data":{}}

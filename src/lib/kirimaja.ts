@@ -1,37 +1,33 @@
-import KiriminAja from "kiriminaja";
+const baseUrl = process.env.NODE_ENV === "production" ? "https://client.kiriminaja.com" : "https://tdev.kiriminaja.com";
+const apiKey = process.env.KIRIMINAJA_API_KEY || "";
 
-// Initialize KiriminAja client using the API key from environment
-KiriminAja.init({
-  baseUrl: "https://tdev.kiriminaja.com", // use production url for live
-  apiKey: process.env.KIRIMINAJA_API_KEY || "",
-});
-
-export const kirimajaClient = KiriminAja;
-
-export async function getProvinces() {
-  return await KiriminAja.address.provinces();
-}
-
-export async function getCities(provinceId: number) {
-  return await KiriminAja.address.cities(provinceId);
-}
-
-export async function getDistricts(cityId: number) {
-  return await KiriminAja.address.districts(cityId);
-}
-
-export async function checkShippingCost(
-  origin: number,
-  destination: number,
-  weight: number,
-  couriers: string[] = ["jne"]
-) {
-  return await KiriminAja.coverageArea.pricingExpress({
-    origin,
-    destination,
-    weight,
-    item_value: 0,
-    insurance: 0,
-    courier: couriers,
+const request = async (path: string, body?: any) => {
+  const res = await fetch(`${baseUrl}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+      "Accept": "application/json"
+    },
+    body: body ? JSON.stringify(body) : undefined,
   });
-}
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.message || `API Error: ${res.status}`);
+  }
+  return data;
+};
+
+export const kirimajaClient = {
+  coverageArea: {
+    districtsByName: async (search: string) => {
+      return await request("/api/mitra/v2/get_address_by_name", { search: search });
+    },
+    pricingExpress: async (params: any) => {
+      return await request("/api/mitra/v6.1/shipping_price", params);
+    },
+    pricingInstant: async (params: any) => {
+      return await request("/api/mitra/v4/instant/pricing", params);
+    }
+  }
+};

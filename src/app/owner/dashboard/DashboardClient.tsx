@@ -1,13 +1,16 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { useRouter } from "next/navigation";
 
 interface DashboardClientProps {
+  currentFilter: string;
   stats: {
     totalUsers: number;
     totalProducts: number;
     totalOrders: number;
     totalRevenue: number;
+    totalMargin: number;
   };
   statusDistribution: {
     PENDING: number;
@@ -30,11 +33,14 @@ const card: React.CSSProperties = {
 };
 
 export default function DashboardClient({
+  currentFilter,
   stats,
   statusDistribution,
   salesTrend,
   topProducts,
 }: DashboardClientProps) {
+  const router = useRouter();
+  
   const maxSales = Math.max(...salesTrend.map((t) => t.amount), 1);
   const maxQty = Math.max(...topProducts.map((p) => p.quantity), 1);
 
@@ -43,12 +49,28 @@ export default function DashboardClient({
 
   const statCards = [
     {
-      label: "Total Pendapatan",
+      label: "Total Pendapatan (Bruto)",
       value: `Rp ${stats.totalRevenue.toLocaleString("id-ID")}`,
-      sub: "Excl. pesanan batal",
+      sub: currentFilter === "today" ? "Penjualan hari ini" : currentFilter === "this_month" ? "Penjualan bulan ini" : "Total seluruh penjualan",
       icon: "💰",
       bg: "#fff1f2",
       iconColor: "var(--primary)",
+    },
+    {
+      label: "Margin / Netto",
+      value: `Rp ${stats.totalMargin.toLocaleString("id-ID")}`,
+      sub: currentFilter === "today" ? "Keuntungan hari ini" : currentFilter === "this_month" ? "Keuntungan bulan ini" : "Total keuntungan bersih",
+      icon: "📈",
+      bg: "#ecfdf5",
+      iconColor: "#059669",
+    },
+    {
+      label: "Total Pesanan",
+      value: stats.totalOrders,
+      sub: currentFilter === "today" ? "Transaksi hari ini" : currentFilter === "this_month" ? "Transaksi bulan ini" : "Seluruh transaksi",
+      icon: "🛒",
+      bg: "#fffbeb",
+      iconColor: "#d97706",
     },
     {
       label: "Total Pelanggan",
@@ -66,14 +88,6 @@ export default function DashboardClient({
       bg: "#f0fdf4",
       iconColor: "#16a34a",
     },
-    {
-      label: "Total Pesanan",
-      value: stats.totalOrders,
-      sub: "Transaksi diproses",
-      icon: "🛒",
-      bg: "#fffbeb",
-      iconColor: "#d97706",
-    },
   ];
 
   const statusSegments = [
@@ -89,9 +103,38 @@ export default function DashboardClient({
   let offset = 0;
 
   return (
-    <div style={{ maxWidth: 1100 }}>
+    <div style={{ maxWidth: 1200, margin: "0 auto", paddingBottom: 40 }}>
+      {/* Filters & Header */}
+      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "center", marginBottom: 32, gap: 16 }}>
+        <div>
+          <h1 style={{ fontSize: 24, fontWeight: 800, color: "var(--secondary)", letterSpacing: -0.5 }}>Ringkasan Bisnis</h1>
+          <p style={{ color: "#6b7280", marginTop: 4 }}>Pantau performa penjualan dan statistik Brownis Cinta</p>
+        </div>
+        <select
+          value={currentFilter}
+          onChange={(e) => {
+            router.push(`/owner/dashboard?filter=${e.target.value}`);
+          }}
+          style={{
+            padding: "8px 16px",
+            borderRadius: 12,
+            border: "1px solid var(--border)",
+            backgroundColor: "white",
+            fontSize: 14,
+            fontWeight: 600,
+            color: "var(--secondary)",
+            cursor: "pointer",
+            outline: "none",
+            boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+          }}
+        >
+          <option value="all">Semua Waktu</option>
+          <option value="this_month">Bulan Ini</option>
+          <option value="today">Hari Ini</option>
+        </select>
+      </div>
 
-      {/* Stat Cards */}
+      {/* Top Stats Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 24 }}>
         {statCards.map((s, i) => (
           <motion.div

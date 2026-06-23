@@ -1,5 +1,5 @@
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import CustomerDashboardClient from "./CustomerDashboardClient";
@@ -39,6 +39,7 @@ export default async function CustomerDashboardPage() {
     shipping_resi: o.shipping_resi || null,
     payment_proof: o.payment_proof || null,
     payment_deadline: o.payment_deadline ? o.payment_deadline.toISOString() : null,
+    refund_account: o.refund_account || null,
     items: o.items.map((item) => ({
       id: item.id,
       quantity: item.quantity,

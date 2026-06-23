@@ -1,8 +1,25 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { createProduct, updateProduct, deleteProduct, uploadProductImage, updateProductOrder } from "./actions";
 import { motion, AnimatePresence } from "framer-motion";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 const s = {
   card: {
@@ -34,23 +51,171 @@ const s = {
   } as React.CSSProperties,
 };
 
+function SortableProductRow({ p, openModal, handleDelete, searchQuery }: any) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: p.id, disabled: searchQuery !== "" });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    borderBottom: "1px solid #f9fafb",
+    backgroundColor: isDragging ? "#f3f4f6" : "white",
+    position: isDragging ? "relative" as const : "static" as const,
+    zIndex: isDragging ? 10 : 0,
+    boxShadow: isDragging ? "0 10px 20px rgba(0,0,0,0.1)" : "none",
+  };
+
+  return (
+    <tr ref={setNodeRef} style={style}>
+      {/* Name */}
+      <td style={{ padding: "14px 20px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: 10, overflow: "hidden",
+            border: "1px solid #f3f4f6", flexShrink: 0,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            backgroundColor: "#fef2f2",
+          }}>
+            {p.image_url
+              ? <img src={p.image_url} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              : <span style={{ fontSize: 18 }}>🍰</span>
+            }
+          </div>
+          <div>
+            <p style={{ fontSize: 14, fontWeight: 700, color: "#111827" }}>{p.name}</p>
+            {p.description && (
+              <p style={{ fontSize: 12, color: "#9ca3af", marginTop: 2, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {p.description}
+              </p>
+            )}
+          </div>
+        </div>
+      </td>
+      {/* Price */}
+      <td style={{ padding: "14px 20px" }}>
+        <span style={{ fontSize: 14, fontWeight: 700, color: "var(--primary)" }}>
+          Rp {Number(p.price).toLocaleString("id-ID")}
+        </span>
+      </td>
+      {/* Stock */}
+      <td style={{ padding: "14px 20px" }}>
+        <span style={{
+          display: "inline-block", padding: "4px 10px", borderRadius: 8, fontSize: 12, fontWeight: 700,
+          backgroundColor: p.stock === 0 ? "#fef2f2" : p.stock < 10 ? "#fffbeb" : "#f0fdf4",
+          color: p.stock === 0 ? "#dc2626" : p.stock < 10 ? "#d97706" : "#16a34a",
+          border: `1px solid ${p.stock === 0 ? "#fecaca" : p.stock < 10 ? "#fde68a" : "#bbf7d0"}`,
+        }}>
+          {p.stock === 0 ? "Habis" : `${p.stock} pcs`}
+        </span>
+      </td>
+      {/* Best Seller */}
+      <td style={{ padding: "14px 20px" }}>
+        {p.is_bestseller
+          ? <span style={{ display: "inline-block", padding: "4px 10px", borderRadius: 8, fontSize: 12, fontWeight: 700, backgroundColor: "#fffbeb", color: "#d97706", border: "1px solid #fde68a" }}>⭐ Best Seller</span>
+          : <span style={{ display: "inline-block", padding: "4px 10px", borderRadius: 8, fontSize: 12, fontWeight: 700, backgroundColor: "#f9fafb", color: "#9ca3af", border: "1px solid #f3f4f6" }}>Tidak</span>
+        }
+      </td>
+      {/* Urutan (Drag Handle) */}
+      <td style={{ padding: "14px 20px" }}>
+        <div 
+          {...attributes} 
+          {...listeners} 
+          title={searchQuery !== "" ? "Kosongkan pencarian untuk mengubah urutan" : "Tahan dan geser untuk mengubah urutan"}
+          style={{ 
+            cursor: searchQuery !== "" ? "not-allowed" : "grab", 
+            color: searchQuery !== "" ? "#d1d5db" : "#9ca3af", 
+            display: "inline-flex", 
+            padding: "8px", 
+            borderRadius: "8px",
+            backgroundColor: searchQuery !== "" ? "transparent" : "#f3f4f6",
+            alignItems: "center",
+            justifyContent: "center"
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="8" y1="6" x2="21" y2="6"></line>
+            <line x1="8" y1="12" x2="21" y2="12"></line>
+            <line x1="8" y1="18" x2="21" y2="18"></line>
+            <line x1="3" y1="6" x2="3.01" y2="6"></line>
+            <line x1="3" y1="12" x2="3.01" y2="12"></line>
+            <line x1="3" y1="18" x2="3.01" y2="18"></line>
+          </svg>
+        </div>
+      </td>
+      {/* Actions */}
+      <td style={{ padding: "14px 20px" }}>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button
+            onClick={() => openModal(p)}
+            title="Edit"
+            style={{ padding: "6px 10px", borderRadius: 8, border: "none", backgroundColor: "#eff6ff", color: "#2563eb", cursor: "pointer", fontSize: 14 }}
+          >✏️</button>
+          <button
+            onClick={() => handleDelete(p.id)}
+            title="Hapus"
+            style={{ padding: "6px 10px", borderRadius: 8, border: "none", backgroundColor: "#fef2f2", color: "#dc2626", cursor: "pointer", fontSize: 14 }}
+          >🗑️</button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 export default function ProductClient({ products }: { products: any[] }) {
+  const [localProducts, setLocalProducts] = useState(products);
+
+  useEffect(() => {
+    setLocalProducts(products);
+  }, [products]);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formData, setFormData] = useState({
     name: "", description: "", price: "", stock: "",
-    image_url: "", is_bestseller: "false",
+    image_url: "", is_bestseller: "false", expiration_days: "3",
+    resellerPrice1: "0", resellerPrice2: "0", resellerPrice3: "0",
   });
   const [loading, setLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const oldIndex = localProducts.findIndex(item => item.id === active.id);
+      const newIndex = localProducts.findIndex(item => item.id === over.id);
+      
+      const newItems = arrayMove(localProducts, oldIndex, newIndex);
+      setLocalProducts(newItems);
+      
+      // Save to DB outside of the setState updater
+      const updates = newItems.map((p, i) => ({
+        id: p.id,
+        display_order: i,
+      }));
+      
+      updateProductOrder(updates).catch(console.error);
+    }
+  };
+
   const filteredProducts = useMemo(() => {
-    if (!searchQuery.trim()) return products;
+    if (!searchQuery.trim()) return localProducts;
     const q = searchQuery.toLowerCase();
-    return products.filter((p) => p.name.toLowerCase().includes(q));
-  }, [products, searchQuery]);
+    return localProducts.filter((p) => p.name.toLowerCase().includes(q));
+  }, [localProducts, searchQuery]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -69,11 +234,18 @@ export default function ProductClient({ products }: { products: any[] }) {
         name: product.name, description: product.description || "",
         price: product.price.toString(), stock: product.stock.toString(),
         image_url: product.image_url || "", is_bestseller: product.is_bestseller ? "true" : "false",
+        expiration_days: product.expiration_days?.toString() || "3",
+        resellerPrice1: product.resellerPrice1?.toString() || "0",
+        resellerPrice2: product.resellerPrice2?.toString() || "0",
+        resellerPrice3: product.resellerPrice3?.toString() || "0",
       });
       setPreviewUrl(product.image_url || "");
     } else {
       setEditingId(null);
-      setFormData({ name: "", description: "", price: "", stock: "", image_url: "", is_bestseller: "false" });
+      setFormData({ 
+        name: "", description: "", price: "", stock: "", image_url: "", is_bestseller: "false", expiration_days: "3",
+        resellerPrice1: "0", resellerPrice2: "0", resellerPrice3: "0"
+      });
       setPreviewUrl("");
     }
     setIsModalOpen(true);
@@ -98,30 +270,6 @@ export default function ProductClient({ products }: { products: any[] }) {
 
   const handleDelete = async (id: number) => {
     if (confirm("Hapus produk ini?")) await deleteProduct(id);
-  };
-
-  const moveOrder = async (index: number, direction: "up" | "down") => {
-    if (direction === "up" && index === 0) return;
-    if (direction === "down" && index === filteredProducts.length - 1) return;
-
-    setLoading(true);
-    
-    // Create a new array with the swapped items
-    const newProducts = [...filteredProducts];
-    const swapIndex = direction === "up" ? index - 1 : index + 1;
-    
-    const temp = newProducts[index];
-    newProducts[index] = newProducts[swapIndex];
-    newProducts[swapIndex] = temp;
-
-    // Build the bulk update payload: simply map the new index to display_order
-    const updates = newProducts.map((p, i) => ({
-      id: p.id,
-      display_order: i,
-    }));
-
-    await updateProductOrder(updates);
-    setLoading(false);
   };
 
   return (
@@ -161,114 +309,51 @@ export default function ProductClient({ products }: { products: any[] }) {
       {/* Table */}
       <div style={{ ...s.card }}>
         <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640 }}>
-            <thead>
-              <tr style={{ backgroundColor: "#f9fafb", borderBottom: "1px solid #f3f4f6" }}>
-                {["Nama Produk", "Harga", "Stok", "Best Seller", "Urutan", "Aksi"].map((h) => (
-                  <th key={h} style={{
-                    padding: "12px 20px", textAlign: "left",
-                    fontSize: 11, fontWeight: 700, color: "#9ca3af",
-                    textTransform: "uppercase", letterSpacing: 0.8,
-                    whiteSpace: "nowrap",
-                  }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filteredProducts.map((p, index) => (
-                <tr key={p.id} style={{ borderBottom: "1px solid #f9fafb" }}>
-                  {/* Name */}
-                  <td style={{ padding: "14px 20px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      <div style={{
-                        width: 40, height: 40, borderRadius: 10, overflow: "hidden",
-                        border: "1px solid #f3f4f6", flexShrink: 0,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        backgroundColor: "#fef2f2",
-                      }}>
-                        {p.image_url
-                          ? <img src={p.image_url} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                          : <span style={{ fontSize: 18 }}>🍰</span>
-                        }
-                      </div>
-                      <div>
-                        <p style={{ fontSize: 14, fontWeight: 700, color: "#111827" }}>{p.name}</p>
-                        {p.description && (
-                          <p style={{ fontSize: 12, color: "#9ca3af", marginTop: 2, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {p.description}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-                  {/* Price */}
-                  <td style={{ padding: "14px 20px" }}>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: "var(--primary)" }}>
-                      Rp {Number(p.price).toLocaleString("id-ID")}
-                    </span>
-                  </td>
-                  {/* Stock */}
-                  <td style={{ padding: "14px 20px" }}>
-                    <span style={{
-                      display: "inline-block", padding: "4px 10px", borderRadius: 8, fontSize: 12, fontWeight: 700,
-                      backgroundColor: p.stock === 0 ? "#fef2f2" : p.stock < 10 ? "#fffbeb" : "#f0fdf4",
-                      color: p.stock === 0 ? "#dc2626" : p.stock < 10 ? "#d97706" : "#16a34a",
-                      border: `1px solid ${p.stock === 0 ? "#fecaca" : p.stock < 10 ? "#fde68a" : "#bbf7d0"}`,
-                    }}>
-                      {p.stock === 0 ? "Habis" : `${p.stock} pcs`}
-                    </span>
-                  </td>
-                  {/* Best Seller */}
-                  <td style={{ padding: "14px 20px" }}>
-                    {p.is_bestseller
-                      ? <span style={{ display: "inline-block", padding: "4px 10px", borderRadius: 8, fontSize: 12, fontWeight: 700, backgroundColor: "#fffbeb", color: "#d97706", border: "1px solid #fde68a" }}>⭐ Best Seller</span>
-                      : <span style={{ display: "inline-block", padding: "4px 10px", borderRadius: 8, fontSize: 12, fontWeight: 700, backgroundColor: "#f9fafb", color: "#9ca3af", border: "1px solid #f3f4f6" }}>Tidak</span>
-                    }
-                  </td>
-                  {/* Urutan */}
-                  <td style={{ padding: "14px 20px" }}>
-                    <div style={{ display: "flex", gap: 4 }}>
-                      <button
-                        onClick={() => moveOrder(index, "up")}
-                        disabled={index === 0 || loading || searchQuery !== ""}
-                        title={searchQuery !== "" ? "Kosongkan pencarian untuk mengatur urutan" : "Naikkan Urutan"}
-                        style={{ padding: "4px 8px", borderRadius: 6, border: "none", backgroundColor: index === 0 || searchQuery !== "" ? "#f3f4f6" : "#e0e7ff", color: index === 0 || searchQuery !== "" ? "#9ca3af" : "#4f46e5", cursor: index === 0 || searchQuery !== "" ? "not-allowed" : "pointer", fontSize: 14 }}
-                      >🔼</button>
-                      <button
-                        onClick={() => moveOrder(index, "down")}
-                        disabled={index === filteredProducts.length - 1 || loading || searchQuery !== ""}
-                        title={searchQuery !== "" ? "Kosongkan pencarian untuk mengatur urutan" : "Turunkan Urutan"}
-                        style={{ padding: "4px 8px", borderRadius: 6, border: "none", backgroundColor: index === filteredProducts.length - 1 || searchQuery !== "" ? "#f3f4f6" : "#e0e7ff", color: index === filteredProducts.length - 1 || searchQuery !== "" ? "#9ca3af" : "#4f46e5", cursor: index === filteredProducts.length - 1 || searchQuery !== "" ? "not-allowed" : "pointer", fontSize: 14 }}
-                      >🔽</button>
-                    </div>
-                  </td>
-                  {/* Actions */}
-                  <td style={{ padding: "14px 20px" }}>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <button
-                        onClick={() => openModal(p)}
-                        title="Edit"
-                        style={{ padding: "6px 10px", borderRadius: 8, border: "none", backgroundColor: "#eff6ff", color: "#2563eb", cursor: "pointer", fontSize: 14 }}
-                      >✏️</button>
-                      <button
-                        onClick={() => handleDelete(p.id)}
-                        title="Hapus"
-                        style={{ padding: "6px 10px", borderRadius: 8, border: "none", backgroundColor: "#fef2f2", color: "#dc2626", cursor: "pointer", fontSize: 14 }}
-                      >🗑️</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {filteredProducts.length === 0 && (
-                <tr>
-                  <td colSpan={6} style={{ padding: "48px 20px", textAlign: "center" }}>
-                    <p style={{ fontSize: 36, marginBottom: 12 }}>🍰</p>
-                    <p style={{ fontSize: 14, color: "#9ca3af", fontWeight: 600 }}>Belum ada produk. Klik tombol "Tambah Produk" untuk memulai.</p>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+          <DndContext 
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext 
+              items={filteredProducts.map(p => p.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640 }}>
+                <thead>
+                  <tr style={{ backgroundColor: "#f9fafb", borderBottom: "1px solid #f3f4f6" }}>
+                    {["Nama Produk", "Harga", "Stok", "Best Seller", "Urutan", "Aksi"].map((h) => (
+                      <th key={h} style={{
+                        padding: "12px 20px", textAlign: "left",
+                        fontSize: 11, fontWeight: 700, color: "#9ca3af",
+                        textTransform: "uppercase", letterSpacing: 0.8,
+                        whiteSpace: "nowrap",
+                      }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredProducts.map((p) => (
+                    <SortableProductRow 
+                      key={p.id} 
+                      p={p} 
+                      openModal={openModal} 
+                      handleDelete={handleDelete} 
+                      searchQuery={searchQuery}
+                    />
+                  ))}
+
+                  {filteredProducts.length === 0 && (
+                    <tr>
+                      <td colSpan={6} style={{ padding: "48px 20px", textAlign: "center" }}>
+                        <p style={{ fontSize: 36, marginBottom: 12 }}>🍰</p>
+                        <p style={{ fontSize: 14, color: "#9ca3af", fontWeight: 600 }}>Belum ada produk. Klik tombol "Tambah Produk" untuk memulai.</p>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </SortableContext>
+          </DndContext>
         </div>
       </div>
 
@@ -345,7 +430,7 @@ export default function ProductClient({ products }: { products: any[] }) {
                     </div>
 
                     {/* Price + Stock */}
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
                       <div>
                         <label style={s.label}>Harga (Rp) *</label>
                         <input
@@ -367,6 +452,51 @@ export default function ProductClient({ products }: { products: any[] }) {
                           onFocus={(e) => (e.target.style.borderColor = "var(--primary)")}
                           onBlur={(e) => (e.target.style.borderColor = "#e5e7eb")}
                         />
+                      </div>
+                      <div>
+                        <label style={s.label}>Masa Expired (Hari) *</label>
+                        <input
+                          type="number" required style={s.input}
+                          value={formData.expiration_days}
+                          onChange={(e) => setFormData({ ...formData, expiration_days: e.target.value })}
+                          placeholder="3"
+                          min="1"
+                          onFocus={(e) => (e.target.style.borderColor = "var(--primary)")}
+                          onBlur={(e) => (e.target.style.borderColor = "#e5e7eb")}
+                        />
+                      </div>
+                    </div>
+                    
+                    <div style={{ padding: 16, backgroundColor: "#fdf4ff", borderRadius: 12, border: "1px dashed #fbcfe8" }}>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: "#be185d", marginBottom: 12 }}>💰 Harga Modal / Beli Reseller</p>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+                        <div>
+                          <label style={{ ...s.label, color: "#9d174d", fontSize: 11 }}>Modal &lt; 10 Box</label>
+                          <input
+                            type="number" required style={{ ...s.input, borderColor: "#fbcfe8", backgroundColor: "white" }}
+                            value={formData.resellerPrice1}
+                            onChange={(e) => setFormData({ ...formData, resellerPrice1: e.target.value })}
+                            placeholder="33250"
+                          />
+                        </div>
+                        <div>
+                          <label style={{ ...s.label, color: "#9d174d", fontSize: 11 }}>Modal 10-20 Box</label>
+                          <input
+                            type="number" required style={{ ...s.input, borderColor: "#fbcfe8", backgroundColor: "white" }}
+                            value={formData.resellerPrice2}
+                            onChange={(e) => setFormData({ ...formData, resellerPrice2: e.target.value })}
+                            placeholder="32300"
+                          />
+                        </div>
+                        <div>
+                          <label style={{ ...s.label, color: "#9d174d", fontSize: 11 }}>Modal &gt; 20 Box</label>
+                          <input
+                            type="number" required style={{ ...s.input, borderColor: "#fbcfe8", backgroundColor: "white" }}
+                            value={formData.resellerPrice3}
+                            onChange={(e) => setFormData({ ...formData, resellerPrice3: e.target.value })}
+                            placeholder="30400"
+                          />
+                        </div>
                       </div>
                     </div>
 

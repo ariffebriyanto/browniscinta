@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { updateOrderStatus } from "./actions";
+import { useState, useEffect } from "react";
+import { updateOrderStatus, confirmStock, autoCancelAwaitingOrders } from "./actions";
 import { motion, AnimatePresence } from "framer-motion";
 
 const statusConfig: Record<string, { label: string; bg: string; color: string; border: string }> = {
+  AWAITING:  { label: "🕐 Menunggu Stok", bg: "#f5f3ff", color: "#7c3aed", border: "#ddd6fe" },
   PENDING:   { label: "⏳ Pending",   bg: "#fffbeb", color: "#d97706", border: "#fde68a" },
   PAID:      { label: "💵 Paid",      bg: "#eff6ff", color: "#2563eb", border: "#bfdbfe" },
   APPROVED:  { label: "✅ Approved",  bg: "#f5f3ff", color: "#7c3aed", border: "#ddd6fe" },
@@ -34,6 +35,11 @@ export default function OrderClient({ orders }: { orders: any[] }) {
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [resiInputs, setResiInputs] = useState<Record<string, string>>({});
 
+  // Auto-cancel expired AWAITING orders on mount
+  useEffect(() => {
+    autoCancelAwaitingOrders();
+  }, []);
+
   // Filters State
   const todayStr = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
   const [filterDate, setFilterDate] = useState<string>(todayStr); // Default today
@@ -43,6 +49,7 @@ export default function OrderClient({ orders }: { orders: any[] }) {
 
   // Stats calculation (All time)
   const statAll = orders.length;
+  const statAwaiting = orders.filter(o => o.status === "AWAITING").length;
   const statPending = orders.filter(o => o.status === "PENDING").length;
   const statPaid = orders.filter(o => o.status === "PAID").length;
   const statRefundPending = orders.filter(o => o.status === "REFUND_PENDING").length;
@@ -101,9 +108,18 @@ export default function OrderClient({ orders }: { orders: any[] }) {
 
   const handleStatusChange = async (id: string, newStatus: string) => {
     setLoadingId(id);
-    const result = await updateOrderStatus(id, newStatus, resiInputs[id]);
+    const result = await updateOrderStatus(id, newStatus, resiInputs?.[id]);
     if (result.error) {
       alert("Gagal merubah status: " + result.error);
+    }
+    setLoadingId(null);
+  };
+
+  const handleConfirmStock = async (id: string) => {
+    setLoadingId(id);
+    const result = await confirmStock(id);
+    if (result.error) {
+      alert("Gagal konfirmasi: " + result.error);
     }
     setLoadingId(null);
   };
@@ -124,6 +140,7 @@ export default function OrderClient({ orders }: { orders: any[] }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 24 }}>
         {[
           { label: "Semua Pesanan", count: statAll, status: "ALL", bg: "#f3f4f6", color: "#374151" },
+          { label: "🕐 Cek Stok", count: statAwaiting, status: "AWAITING", bg: "#f5f3ff", color: "#7c3aed", hasNotif: statAwaiting > 0 },
           { label: "Menunggu Bayar", count: statPending, status: "PENDING", bg: "#fffbeb", color: "#d97706" },
           { label: "Perlu Approve", count: statPaid, status: "PAID", bg: "#eff6ff", color: "#2563eb", hasNotif: statPaid > 0 },
           { label: "Perlu Refund", count: statRefundPending, status: "REFUND_PENDING", bg: "#fef2f2", color: "#dc2626", hasNotif: statRefundPending > 0 },
@@ -400,6 +417,35 @@ export default function OrderClient({ orders }: { orders: any[] }) {
                         <span style={{ fontSize: 12, fontWeight: 700, color: "#047857", backgroundColor: "#ecfdf5", padding: "6px 12px", borderRadius: 8, border: "1px solid #a7f3d0" }}>
                           ✅ Dana Telah Dikembalikan
                         </span>
+                      </div>
+                    ) : o.status === "AWAITING" ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 10, alignItems: "flex-start" }}>
+                        <div style={{ padding: "10px 12px", backgroundColor: "#f5f3ff", borderRadius: 10, border: "1px solid #ddd6fe", maxWidth: 200 }}>
+                          <p style={{ fontSize: 11, fontWeight: 700, color: "#6d28d9", margin: 0, lineHeight: 1.5 }}>🕐 Pesanan menunggu konfirmasi ketersediaan stok</p>
+                          <p style={{ fontSize: 10, color: "#8b5cf6", margin: "4px 0 0 0" }}>Auto-cancel dalam 2 hari jika tidak dikonfirmasi</p>
+                        </div>
+                        <button
+                          onClick={() => handleConfirmStock(o.id)}
+                          disabled={loadingId === o.id}
+                          style={{
+                            padding: "8px 14px", borderRadius: 10, border: "none",
+                            backgroundColor: loadingId === o.id ? "#9ca3af" : "#16a34a", color: "white",
+                            fontSize: 12, fontWeight: 700, cursor: loadingId === o.id ? "not-allowed" : "pointer",
+                          }}
+                        >
+                          {loadingId === o.id ? "Memproses..." : "✅ Stok Tersedia, Minta Bayar"}
+                        </button>
+                        <button
+                          onClick={() => handleStatusChange(o.id, "CANCELLED")}
+                          disabled={loadingId === o.id}
+                          style={{
+                            padding: "8px 14px", borderRadius: 10, border: "1px solid #fecaca",
+                            backgroundColor: "#fef2f2", color: "#dc2626",
+                            fontSize: 11, fontWeight: 700, cursor: "pointer",
+                          }}
+                        >
+                          ❌ Stok Habis, Batalkan
+                        </button>
                       </div>
                     ) : (
                       <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start" }}>

@@ -23,6 +23,16 @@ export default function RegisterPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!formData.phone.startsWith("62")) {
+      setError("Format salah. Nomor HP harus diawali dengan 62 (contoh: 62812...)");
+      return;
+    }
+    if (!/^\d+$/.test(formData.phone)) {
+      setError("Format salah. Nomor HP hanya boleh berisi angka.");
+      return;
+    }
+
     setLoading(true);
     setError("");
     try {
@@ -113,8 +123,13 @@ export default function RegisterPage() {
               <div className="form-group">
                 <label className="form-label">Nomor HP / WhatsApp</label>
                 <input type="text" name="phone" className="form-input"
-                  value={formData.phone} onChange={handleChange}
-                  placeholder="Contoh: 08123456789" required />
+                  value={formData.phone} 
+                  onChange={(e) => {
+                    let val = e.target.value.replace(/\D/g, "");
+                    if (val.startsWith("0")) val = "62" + val.slice(1);
+                    setFormData({ ...formData, phone: val });
+                  }}
+                  placeholder="Contoh: 6281234567890" required />
               </div>
 
               <div className="form-group">

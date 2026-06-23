@@ -72,38 +72,57 @@ export async function createOrder(data: {
   try {
     const deadline = new Date(Date.now() + PAYMENT_WINDOW_MS);
 
+    // Snapshot modal price for each item based on total quantity in this order
+    const totalBox = data.items.reduce((sum, item) => sum + item.quantity, 0);
+    const productIds = data.items.map((item) => item.productId);
+    const products = await prisma.product.findMany({
+      where: { id: { in: productIds } },
+      select: { id: true, resellerPrice1: true, resellerPrice2: true, resellerPrice3: true, price: true },
+    });
+    const productMap = new Map(products.map((p) => [p.id, p]));
+
+    const itemsWithModal = data.items.map((item) => {
+      const product = productMap.get(item.productId);
+      let modalPrice = 0;
+      if (product) {
+        if (totalBox > 20) modalPrice = product.resellerPrice3;
+        else if (totalBox >= 10) modalPrice = product.resellerPrice2;
+        else modalPrice = product.resellerPrice1;
+      }
+      // Fallback to percentage if modal not set
+      if (modalPrice === 0) {
+        const multiplier = totalBox > 20 ? 0.80 : totalBox >= 10 ? 0.85 : 0.875;
+        modalPrice = Math.round(Number(item.price) * multiplier);
+      }
+      return { ...item, modalPrice };
+    });
+
     const order = await prisma.order.create({
       data: {
         user_id: data.userId,
         total_price: data.totalPrice,
         shipping_cost: data.shippingCost,
         shipping_service: data.shippingService,
-        status: "PENDING",
-        payment_deadline: deadline,
+        status: "AWAITING",
+        payment_deadline: null,
         items: {
-          create: data.items.map((item) => ({
+          create: itemsWithModal.map((item) => ({
             product_id: item.productId,
             quantity: item.quantity,
             price: item.price,
+            modal_price: item.modalPrice,
           })),
         },
       },
       include: { user: true },
     });
 
-    // Send WA Notifications
+    // Send WA Notification to Owner ONLY (customer doesn't pay yet)
     if (order.user?.phone) {
       const formattedTotal = `Rp ${Number(data.totalPrice).toLocaleString("id-ID")}`;
-      const timeLimit = deadline.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
-      
-      // WA for Customer
-      const customerMsg = `Halo Kak ${order.user.name} 👋,\n\nTerima kasih telah memesan di *Brownis Cinta*!\n\nPesanan Anda (Order ID: #${order.id.slice(-6).toUpperCase()}) telah kami terima. Total tagihan Anda adalah *${formattedTotal}*.\n\nMohon segera selesaikan pembayaran sebelum jam *${timeLimit}* agar pesanan tidak batal otomatis.\nSilakan cek detail pesanan dan upload bukti transfer di menu Pesananku di website kami.\n\nTerima kasih! 🍫`;
-      sendWhatsappText(order.user.phone, customerMsg).catch(console.error);
-
-      // WA for Admin
-      const adminPhone = "6281234567890"; // Ganti dengan nomor Admin
-      const adminMsg = `🚨 *PESANAN BARU MASUK!* 🚨\n\nOrder ID: #${order.id.slice(-6).toUpperCase()}\nDari: ${order.user.name} (${order.user.phone})\nTotal: *${formattedTotal}*\nPengiriman: ${data.shippingService}\n\nMohon pantau konfirmasi pembayaran dari customer ini di Dasbor Admin.`;
-      sendWhatsappText(adminPhone, adminMsg).catch(console.error);
+      const adminPhone = "6281282386336"; // Nomor Admin / Owner
+      const adminMsg = `🛒 *PESANAN BARU MASUK!* 🛒\n\nOrder ID: #${order.id.slice(-6).toUpperCase()}\nDari: ${order.user.name} (${order.user.phone})\nTotal: *${formattedTotal}*\nPengiriman: ${data.shippingService}\n\n⚠️ Silakan cek ketersediaan stok, lalu konfirmasi di Dashboard Owner.\n(Pesanan akan auto-cancel dalam 2 hari jika tidak dikonfirmasi)`;
+      await sendWhatsappText(adminPhone, adminMsg).catch(console.error);
     }
 
     revalidatePath("/customer/dashboard");
@@ -145,8 +164,8 @@ export async function cancelExpiredOrders() {
  */
 export async function cancelOrder(orderId: string) {
   try {
-    await prisma.order.update({
-      where: { id: orderId, status: "PENDING" },
+    await prisma.order.updateMany({
+      where: { id: orderId, status: { in: ["PENDING", "AWAITING"] } },
       data: { status: "CANCELLED" },
     });
     revalidatePath("/customer/dashboard");

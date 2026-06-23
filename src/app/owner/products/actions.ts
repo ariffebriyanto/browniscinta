@@ -41,6 +41,10 @@ export async function createProduct(data: any) {
         stock: parseInt(data.stock),
         image_url: data.image_url || null,
         is_bestseller: data.is_bestseller === "true",
+        resellerPrice1: parseInt(data.resellerPrice1) || 0,
+        resellerPrice2: parseInt(data.resellerPrice2) || 0,
+        resellerPrice3: parseInt(data.resellerPrice3) || 0,
+        expiration_days: parseInt(data.expiration_days) || 3,
       },
     });
     revalidatePath("/owner/products");
@@ -62,6 +66,10 @@ export async function updateProduct(id: number, data: any) {
         stock: parseInt(data.stock),
         image_url: data.image_url || null,
         is_bestseller: data.is_bestseller === "true",
+        resellerPrice1: parseInt(data.resellerPrice1) || 0,
+        resellerPrice2: parseInt(data.resellerPrice2) || 0,
+        resellerPrice3: parseInt(data.resellerPrice3) || 0,
+        expiration_days: parseInt(data.expiration_days) || 3,
       },
     });
     revalidatePath("/owner/products");

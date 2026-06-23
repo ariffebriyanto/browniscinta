@@ -41,6 +41,7 @@ interface Order {
   shipping_resi: string | null;
   payment_proof: string | null;
   payment_deadline: string | null;
+  refund_account: string | null;
   items: OrderItem[];
 }
 
@@ -95,6 +96,63 @@ function CountdownBanner({ order, onExpired }: { order: Order; onExpired: (id: s
           <span>
             Selesaikan pembayaran dalam{' '}
             <span style={{ fontFamily: "monospace", fontSize: 18, letterSpacing: 1 }}>{mm} menit {ss} detik</span>
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function useAwaitingCountdown(createdAt: string): { hh: string; mm: string; ss: string; expired: boolean } | null {
+  const calc = useCallback(() => {
+    const deadline = new Date(new Date(createdAt).getTime() + 48 * 60 * 60 * 1000).getTime();
+    const diff = deadline - Date.now();
+    if (diff <= 0) return { hh: '00', mm: '00', ss: '00', expired: true };
+    const totalSec = Math.floor(diff / 1000);
+    const hh = String(Math.floor(totalSec / 3600)).padStart(2, '0');
+    const mm = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
+    const ss = String(totalSec % 60).padStart(2, '0');
+    return { hh, mm, ss, expired: false };
+  }, [createdAt]);
+
+  const [state, setState] = useState<{ hh: string; mm: string; ss: string; expired: boolean } | null>(null);
+
+  useEffect(() => {
+    setState(calc());
+    const interval = setInterval(() => setState(calc()), 1000);
+    return () => clearInterval(interval);
+  }, [calc]);
+
+  return state;
+}
+
+function AwaitingCountdownBanner({ order, onExpired }: { order: Order; onExpired: (id: string) => void }) {
+  const state = useAwaitingCountdown(order.createdAt);
+  
+  useEffect(() => {
+    if (state?.expired) onExpired(order.id);
+  }, [state?.expired, order.id, onExpired]);
+
+  if (!state) return null;
+
+  const { hh, mm, ss, expired } = state;
+
+  return (
+    <div style={{
+      display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12,
+      padding: "12px 20px", borderRadius: 12, fontSize: 14, fontWeight: 700,
+      backgroundColor: expired ? "#fff1f2" : "#f5f3ff",
+      border: `1px solid ${expired ? "#fecdd3" : "#ddd6fe"}`,
+      color: expired ? "#e11d48" : "#6d28d9"
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        {expired ? <TimerOff size={16} /> : <Clock size={16} />}
+        {expired ? (
+          <span>Batas waktu konfirmasi habis — pesanan otomatis dibatalkan.</span>
+        ) : (
+          <span>
+            Batas waktu konfirmasi stok:{' '}
+            <span style={{ fontFamily: "monospace", fontSize: 18, letterSpacing: 1 }}>{hh} jam {mm} mnt {ss} dtk</span>
           </span>
         )}
       </div>
@@ -261,6 +319,7 @@ export default function CustomerDashboardClient({
 
   const getStatusText = (order: any) => {
     switch (order.status) {
+      case "AWAITING": return "🕐 Menunggu Konfirmasi Stok Penjual";
       case "PENDING": return "Menunggu Pembayaran";
       case "PAID": return "Menunggu Konfirmasi Penjual";
       case "APPROVED": return "Pesanan Sedang Disiapkan";
@@ -276,6 +335,7 @@ export default function CustomerDashboardClient({
 
   const getStatusBadgeStyle = (status: string) => {
     switch (status) {
+      case "AWAITING": return { backgroundColor: "#f5f3ff", color: "#7c3aed", borderColor: "#ddd6fe" };
       case "PENDING": return { backgroundColor: "#fffbeb", color: "#d97706", borderColor: "#fde68a" };
       case "PAID": return { backgroundColor: "#eff6ff", color: "#2563eb", borderColor: "#bfdbfe" };
       case "APPROVED": return { backgroundColor: "#f5f3ff", color: "#7c3aed", borderColor: "#ddd6fe" };
@@ -322,6 +382,17 @@ export default function CustomerDashboardClient({
           </Link>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <span style={{ fontSize: 13, color: "var(--secondary)", fontWeight: 600 }}>Halo, {userName}</span>
+            <Link 
+              href="/customer/profile"
+              style={{
+                border: "1.5px solid var(--border)", color: "var(--secondary)",
+                background: "transparent", padding: "7px 14px", borderRadius: 10,
+                fontSize: 13, fontWeight: 700, cursor: "pointer", textDecoration: "none",
+                display: "flex", alignItems: "center", gap: 6,
+              }}
+            >
+              ⚙️ Profil
+            </Link>
             <button 
               onClick={() => signOut({ callbackUrl: "/login" })} 
               style={{
@@ -417,6 +488,7 @@ export default function CustomerDashboardClient({
             </div>
           ) : filteredOrders.map((order) => {
             const isPending = order.status === "PENDING";
+            const isAwaiting = order.status === "AWAITING";
             return (
               <div 
                 key={order.id} 
@@ -450,6 +522,13 @@ export default function CustomerDashboardClient({
                 {isPending && order.payment_deadline && (
                   <div style={{ padding: "16px 24px 0 24px" }}>
                     <CountdownBanner order={order} onExpired={handleExpired} />
+                  </div>
+                )}
+
+                {/* Countdown banner for AWAITING orders */}
+                {isAwaiting && (
+                  <div style={{ padding: "16px 24px 0 24px" }}>
+                    <AwaitingCountdownBanner order={order} onExpired={handleExpired} />
                   </div>
                 )}
 
@@ -507,7 +586,21 @@ export default function CustomerDashboardClient({
 
                     {/* Right: Payment Instructions or Proof Uploader */}
                     <div style={{ backgroundColor: "#f9fafb", padding: 20, borderRadius: 16, border: "1px solid var(--border)", display: "flex", flexDirection: "column", justifyContent: "space-between", minHeight: 200 }}>
-                      {isPending ? (
+                      {isAwaiting ? (
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 16, textAlign: "center", flexGrow: 1 }}>
+                          <div style={{ backgroundColor: "#f5f3ff", padding: 16, borderRadius: "50%", color: "#7c3aed" }}>
+                            <Clock size={32} />
+                          </div>
+                          <div>
+                            <h4 style={{ fontSize: 14, fontWeight: 700, color: "var(--secondary)", marginBottom: 4 }}>
+                              Menunggu Konfirmasi Penjual
+                            </h4>
+                            <p style={{ fontSize: 12, color: "#6b7280", maxWidth: 280, margin: "0 auto", lineHeight: 1.5 }}>
+                              Pesanan Anda sedang dicek ketersediaan stoknya oleh penjual. Anda akan diminta melakukan pembayaran setelah stok dipastikan tersedia.
+                            </p>
+                          </div>
+                        </div>
+                      ) : isPending ? (
                         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                           <div>
                             <h4 style={{ fontSize: 12, fontWeight: 700, color: "var(--secondary)", textTransform: "uppercase", letterSpacing: 0.5, display: "flex", alignItems: "center", gap: 6 }}>
@@ -517,9 +610,10 @@ export default function CustomerDashboardClient({
                               Kirim persis <span style={{ color: "var(--primary)", fontWeight: 700 }}>Rp {order.total_price.toLocaleString("id-ID")}</span> ke rekening BCA admin:
                             </p>
                           </div>
-                          <div style={{ backgroundColor: "white", padding: 14, borderRadius: 12, border: "1px solid #fecdd3", textAlign: "center", boxShadow: "0 2px 4px rgba(0,0,0,0.02)" }}>
-                            <p style={{ fontWeight: 700, color: "var(--primary)", fontSize: 20, fontFamily: "monospace" }}>BCA 2140639403</p>
-                            <p style={{ color: "var(--secondary)", fontSize: 12, fontWeight: 700, marginTop: 2 }}>a/n Arif Febriyanto</p>
+                          <div style={{ backgroundColor: "white", padding: "20px 14px", borderRadius: 12, border: "1px solid #fecdd3", textAlign: "center", boxShadow: "0 4px 12px rgba(0,0,0,0.03)", display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 16 }}>
+                            <img src="https://upload.wikimedia.org/wikipedia/commons/5/5c/Bank_Central_Asia.svg" alt="BCA Logo" style={{ height: 28, marginBottom: 12 }} />
+                            <p style={{ fontWeight: 800, color: "#111827", fontSize: 22, fontFamily: "monospace", letterSpacing: 2, marginBottom: 4 }}>2140639403</p>
+                            <p style={{ color: "var(--secondary)", fontSize: 13, fontWeight: 700 }}>a/n Arif Febriyanto</p>
                           </div>
 
                           {/* Upload Trigger / Dropzone */}
