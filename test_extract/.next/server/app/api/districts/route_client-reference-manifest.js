@@ -1,1 +1,0 @@
-globalThis.__RSC_MANIFEST=(globalThis.__RSC_MANIFEST||{});globalThis.__RSC_MANIFEST["/api/districts/route"]={"moduleLoading":{"prefix":"/_next/"},"ssrModuleMapping":{},"edgeSSRModuleMapping":{},"clientModules":{},"entryCSSFiles":{"D:\\brownis  cinta\\brownis-cinta\\src\\app\\api\\districts\\route":[]},"rscModuleMapping":{},"edgeRscModuleMapping":{}};
