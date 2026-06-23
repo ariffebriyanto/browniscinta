@@ -273,8 +273,9 @@ function CartCheckoutInner() {
         boxShadow: "0 1px 8px rgba(0,0,0,0.04)"
       }}>
         <div className="container" style={{ display: "flex", alignItems: "center", justifyItems: "center", justifyContent: "space-between", paddingTop: 14, paddingBottom: 14 }}>
-          <Link href="/" style={{ fontFamily: "var(--font-serif)", fontWeight: 700, color: "var(--primary)", fontSize: 18, textDecoration: "none" }}>
-            Brownis Cinta
+          <Link href="/" style={{ display: "flex", alignItems: "center", gap: "10px", textDecoration: "none" }}>
+            <img src="/logo.png" alt="Logo" style={{ height: 50, objectFit: "contain" }} />
+            <span style={{ fontFamily: "var(--font-serif)", fontWeight: 700, color: "var(--primary)", fontSize: 20 }}>Brownis Cinta</span>
           </Link>
           <Link 
             href="/" 

@@ -178,7 +178,16 @@ function CartCheckoutInner() {
   });
 
   const cartSubtotal = enhancedCartItems.reduce((sum, item) => sum + item.subtotal, 0);
-  const total = cartSubtotal + shippingCost + uniqueCode;
+  const totalItems = enhancedCartItems.reduce((sum, item) => sum + item.qty, 0);
+
+  // Promo Logic: Beli >= 10, Gratis Potongan
+  let promoDiscount = 0;
+  if (totalItems >= 10 && deliveryMode === "DELIVERY") {
+    if (isJava) promoDiscount = 5000;
+    else if (isOuterJava) promoDiscount = 10000;
+  }
+
+  const total = cartSubtotal + shippingCost - promoDiscount + uniqueCode;
 
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -217,7 +226,8 @@ function CartCheckoutInner() {
       : 'Pengiriman Luar Jawa (+Rp 40.000)';
       
     const formattedDate = new Date(deliveryDate).toLocaleString("id-ID", { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).replace(/\./g, ':');
-    const shippingService = `${baseService} (Waktu: ${formattedDate})${selectedAddress ? ` | Penerima: ${selectedAddress.recipient_name} | Alamat: ${selectedAddress.full_address}` : ''}`;
+    const promoText = promoDiscount > 0 ? ` | Promo Potongan Ongkir: -Rp ${promoDiscount.toLocaleString('id-ID')}` : '';
+    const shippingService = `${baseService} (Waktu: ${formattedDate})${selectedAddress ? ` | Penerima: ${selectedAddress.recipient_name} | Alamat: ${selectedAddress.full_address}` : ''}${promoText}`;
     
     const orderData = {
       userId,
@@ -259,8 +269,9 @@ function CartCheckoutInner() {
         boxShadow: "0 1px 8px rgba(0,0,0,0.04)"
       }}>
         <div className="container" style={{ display: "flex", alignItems: "center", justifyItems: "center", justifyContent: "space-between", paddingTop: 14, paddingBottom: 14 }}>
-          <Link href="/" style={{ fontFamily: "var(--font-serif)", fontWeight: 700, color: "var(--primary)", fontSize: 18, textDecoration: "none" }}>
-            Brownis Cinta
+          <Link href="/" style={{ display: "flex", alignItems: "center", gap: "10px", textDecoration: "none" }}>
+            <img src="/logo.png" alt="Logo" style={{ height: 50, objectFit: "contain" }} />
+            <span style={{ fontFamily: "var(--font-serif)", fontWeight: 700, color: "var(--primary)", fontSize: 20 }}>Brownis Cinta</span>
           </Link>
           <Link href="/" style={{ fontSize: 13, fontWeight: 700, color: "var(--secondary)", display: "flex", alignItems: "center", gap: 6, textDecoration: "none" }}>
             <ChevronLeft size={16} /> Kembali ke Beranda
@@ -500,6 +511,13 @@ function CartCheckoutInner() {
                       {shippingCost === 0 ? "Gratis" : `Rp ${shippingCost.toLocaleString('id-ID')}`}
                     </span>
                   </div>
+
+                  {promoDiscount > 0 && (
+                    <div style={{ display: "flex", justifyItems: "center", justifyContent: "space-between", fontSize: 13, color: "#10b981", marginTop: "-4px" }}>
+                      <span style={{ fontWeight: 600 }}>Promo Diskon Ongkir</span>
+                      <span style={{ fontWeight: 700 }}>-Rp {promoDiscount.toLocaleString('id-ID')}</span>
+                    </div>
+                  )}
 
                   {uniqueCode > 0 && (
                     <div style={{ display: "flex", justifyItems: "center", justifyContent: "space-between", fontSize: 13, color: "#6b7280", borderBottom: "1px dashed #e5e7eb", paddingBottom: 16, paddingTop: 16 }}>

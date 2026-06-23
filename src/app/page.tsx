@@ -82,8 +82,9 @@ export default async function Home() {
         boxShadow: "0 1px 8px rgba(0,0,0,0.04)"
       }}>
         <div className="container" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 14, paddingBottom: 14 }}>
-          <Link href="/" style={{ fontFamily: "var(--font-serif)", fontWeight: 700, color: "var(--primary)", fontSize: 20 }}>
-            Brownis Cinta
+          <Link href="/" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <img src="/logo.png" alt="Logo" style={{ height: 60, objectFit: "contain" }} />
+            <span style={{ fontFamily: "var(--font-serif)", fontWeight: 700, color: "var(--primary)", fontSize: 22 }}>Brownis Cinta</span>
           </Link>
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             {session?.user?.role !== "OWNER" && <CartIcon />}
@@ -129,8 +130,18 @@ export default async function Home() {
         </div>
       </nav>
 
+      {/* PROMO BANNER */}
+      <div style={{ backgroundColor: "#fef2f2", borderBottom: "1px solid #fecdd3", padding: "12px 20px", textAlign: "center" }}>
+        <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#be123c", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
+          <span>🎉 <span style={{ backgroundColor: "#e11d48", color: "white", padding: "2px 6px", borderRadius: 4, marginRight: 4 }}>PROMO GROSIR</span></span>
+          <span>Beli minimal <strong>10 Box</strong> langsung dapat <strong style={{ textDecoration: "underline" }}>Potongan Ongkir</strong>!</span>
+          <span style={{ backgroundColor: "#ffe4e6", padding: "2px 8px", borderRadius: 12, border: "1px dashed #fda4af", fontSize: 11 }}>Dalam Jawa: -Rp 5.000</span>
+          <span style={{ backgroundColor: "#ffe4e6", padding: "2px 8px", borderRadius: 12, border: "1px dashed #fda4af", fontSize: 11 }}>Luar Jawa: -Rp 10.000</span>
+        </p>
+      </div>
+
       {/* HERO */}
-      <section style={{ paddingTop: 60, paddingBottom: 60 }}>
+      <section style={{ paddingTop: 40, paddingBottom: 60 }}>
         <div className="container">
           <div style={{
             display: "grid",
