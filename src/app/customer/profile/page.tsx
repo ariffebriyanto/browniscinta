@@ -6,6 +6,50 @@ import { getUserProfile, updateUserProfile, addAddress, updateAddress, deleteAdd
 import Link from 'next/link';
 import { ChevronLeft, User, Phone, Lock, MapPin, Plus, Trash2, Edit2, Star, Map, Search, Navigation } from 'lucide-react';
 
+const PROVINCES = [
+  // DI Yogyakarta (Gratis)
+  { name: "DI Yogyakarta", zone: "jogja" },
+  // Dalam Jawa (+20rb)
+  { name: "DKI Jakarta", zone: "java" },
+  { name: "Jawa Barat", zone: "java" },
+  { name: "Jawa Tengah", zone: "java" },
+  { name: "Jawa Timur", zone: "java" },
+  { name: "Banten", zone: "java" },
+  // Luar Jawa (+40rb)
+  { name: "Aceh", zone: "outer" },
+  { name: "Sumatera Utara", zone: "outer" },
+  { name: "Sumatera Barat", zone: "outer" },
+  { name: "Riau", zone: "outer" },
+  { name: "Kepulauan Riau", zone: "outer" },
+  { name: "Jambi", zone: "outer" },
+  { name: "Bengkulu", zone: "outer" },
+  { name: "Sumatera Selatan", zone: "outer" },
+  { name: "Kepulauan Bangka Belitung", zone: "outer" },
+  { name: "Lampung", zone: "outer" },
+  { name: "Bali", zone: "outer" },
+  { name: "Nusa Tenggara Barat", zone: "outer" },
+  { name: "Nusa Tenggara Timur", zone: "outer" },
+  { name: "Kalimantan Barat", zone: "outer" },
+  { name: "Kalimantan Tengah", zone: "outer" },
+  { name: "Kalimantan Selatan", zone: "outer" },
+  { name: "Kalimantan Timur", zone: "outer" },
+  { name: "Kalimantan Utara", zone: "outer" },
+  { name: "Sulawesi Utara", zone: "outer" },
+  { name: "Gorontalo", zone: "outer" },
+  { name: "Sulawesi Tengah", zone: "outer" },
+  { name: "Sulawesi Barat", zone: "outer" },
+  { name: "Sulawesi Selatan", zone: "outer" },
+  { name: "Sulawesi Tenggara", zone: "outer" },
+  { name: "Maluku Utara", zone: "outer" },
+  { name: "Maluku", zone: "outer" },
+  { name: "Papua Barat", zone: "outer" },
+  { name: "Papua Barat Daya", zone: "outer" },
+  { name: "Papua", zone: "outer" },
+  { name: "Papua Selatan", zone: "outer" },
+  { name: "Papua Tengah", zone: "outer" },
+  { name: "Papua Pegunungan", zone: "outer" },
+];
+
 export default function ProfilePage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -24,7 +68,9 @@ export default function ProfilePage() {
     recipient_name: '',
     phone: '',
     full_address: '',
-    is_jogja: null,
+    province: '',
+    is_jogja: false,
+    is_java: true,
     is_primary: false
   });
 
@@ -85,22 +131,32 @@ export default function ProfilePage() {
         const displayAddress = data.display_name || `Koordinat: ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
         
         let isJogja = false;
+        let isJava = false;
+        const JAVA_PROVINCES = ['jakarta', 'jawa barat', 'jawa tengah', 'jawa timur', 'banten', 'yogyakarta'];
+
         if (data.address) {
-          const state = data.address.state || data.address.province || '';
-          const city = data.address.city || data.address.county || '';
-          if (state.toLowerCase().includes('yogyakarta') || city.toLowerCase().includes('yogyakarta') || city.toLowerCase().includes('sleman') || city.toLowerCase().includes('bantul') || city.toLowerCase().includes('gunungkidul') || city.toLowerCase().includes('kulon progo')) {
+          const state = (data.address.state || data.address.province || '').toLowerCase();
+          const city = (data.address.city || data.address.county || '').toLowerCase();
+
+          // Detect Jogja specifically
+          if (state.includes('yogyakarta') || city.includes('yogyakarta') || city.includes('sleman') || city.includes('bantul') || city.includes('gunungkidul') || city.includes('kulon progo')) {
             isJogja = true;
+            isJava = true;
+          } else if (JAVA_PROVINCES.some(p => state.includes(p) || city.includes(p))) {
+            // Detect other Java provinces
+            isJava = true;
           }
         }
 
-        setAddressForm(prev => ({
+        setAddressForm((prev: any) => ({
           ...prev,
           full_address: `${displayAddress}, ${lat.toFixed(7)}, ${lng.toFixed(7)}`,
-          is_jogja: isJogja
+          is_jogja: isJogja,
+          is_java: isJava
         }));
       }
     } catch (err) {
-      setAddressForm(prev => ({
+      setAddressForm((prev: any) => ({
         ...prev,
         full_address: `Koordinat: ${lat.toFixed(7)}, ${lng.toFixed(7)}`
       }));
@@ -207,6 +263,17 @@ export default function ProfilePage() {
     );
   };
 
+  const handleProvinceChange = (provinceName: string) => {
+    const found = PROVINCES.find(p => p.name === provinceName);
+    const zone = found?.zone || 'outer';
+    setAddressForm((prev: any) => ({
+      ...prev,
+      province: provinceName,
+      is_jogja: zone === 'jogja',
+      is_java: zone === 'jogja' || zone === 'java',
+    }));
+  };
+
   const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -239,7 +306,9 @@ export default function ProfilePage() {
         recipient_name: addr.recipient_name,
         phone: addr.phone,
         full_address: addr.full_address,
+        province: addr.province || '',
         is_jogja: addr.is_jogja,
+        is_java: addr.is_java ?? true,
         is_primary: addr.is_primary
       });
       // Try to extract coordinates to set the map
@@ -253,7 +322,9 @@ export default function ProfilePage() {
         recipient_name: profileData.name,
         phone: profileData.phone,
         full_address: '',
-        is_jogja: null,
+        province: '',
+        is_jogja: false,
+        is_java: true,
         is_primary: addresses.length === 0
       });
       setCustomerCoords({ lat: -7.7647423, lng: 110.3494548 }); // Reset to Jogja default
@@ -402,11 +473,18 @@ export default function ProfilePage() {
                     {addr.recipient_name}
                   </h3>
                   <p style={{ fontSize: 13, color: "#4b5563", marginBottom: 8 }}>{addr.phone}</p>
-                  <p style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5, marginBottom: 12 }}>{addr.full_address}</p>
+                  <p style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5, marginBottom: 8 }}>{addr.full_address}</p>
+                  {addr.province && (
+                    <p style={{ fontSize: 12, color: "#9ca3af", marginBottom: 8 }}>📍 {addr.province}</p>
+                  )}
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 16 }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 8px", borderRadius: 4, backgroundColor: addr.is_jogja ? "#ecfdf5" : "#f3f4f6", color: addr.is_jogja ? "#059669" : "#6b7280" }}>
-                      {addr.is_jogja ? "Wilayah DI Yogyakarta" : "Luar DI Yogyakarta"}
-                    </span>
+                    {addr.is_jogja ? (
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 8px", borderRadius: 4, backgroundColor: "#ecfdf5", color: "#059669" }}>🏠 DI Yogyakarta — Ongkir Gratis</span>
+                    ) : addr.is_java ? (
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 8px", borderRadius: 4, backgroundColor: "#eff6ff", color: "#2563eb" }}>🚚 Dalam Jawa — Ongkir Rp 20.000</span>
+                    ) : (
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 8px", borderRadius: 4, backgroundColor: "#fef3c7", color: "#d97706" }}>✈️ Luar Jawa — Ongkir Rp 40.000</span>
+                    )}
                   </div>
 
                   <div style={{ display: "flex", gap: 12, borderTop: "1px dashed var(--border)", paddingTop: 12 }}>
@@ -547,31 +625,78 @@ export default function ProfilePage() {
                 />
               </div>
 
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px", backgroundColor: "#f9fafb", borderRadius: 8, border: "1px solid #e5e7eb" }}>
-                <label style={{ fontSize: 13, fontWeight: 700, color: "#4b5563" }}>Wilayah Pengiriman *</label>
-                <p style={{ fontSize: 11, color: "#9ca3af", margin: 0, lineHeight: 1.4 }}>Pilih wilayah secara manual, atau biarkan Peta mendeteksinya secara otomatis.</p>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#4b5563", cursor: "pointer", fontWeight: 600 }}>
-                    <input 
-                      type="radio" 
-                      name="is_jogja"
-                      checked={addressForm.is_jogja === true}
-                      onChange={() => setAddressForm({...addressForm, is_jogja: true})}
-                      style={{ width: 16, height: 16, accentColor: "var(--primary)" }}
-                    />
-                    DI Yogyakarta
-                  </label>
-                  <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#4b5563", cursor: "pointer", fontWeight: 600 }}>
-                    <input 
-                      type="radio" 
-                      name="is_jogja"
-                      checked={addressForm.is_jogja === false}
-                      onChange={() => setAddressForm({...addressForm, is_jogja: false})}
-                      style={{ width: 16, height: 16, accentColor: "var(--primary)" }}
-                    />
-                    Luar DI Yogyakarta
-                  </label>
-                </div>
+              {/* Province Dropdown */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <label style={{ fontSize: 13, fontWeight: 700, color: "#4b5563" }}>Provinsi *</label>
+                <select
+                  required
+                  value={addressForm.province}
+                  onChange={(e) => handleProvinceChange(e.target.value)}
+                  style={{ width: "100%", padding: "10px 14px", borderRadius: 8, border: `1.5px solid ${addressForm.province ? "var(--primary)" : "var(--border)"}`, outline: "none", fontSize: 14, backgroundColor: "white", cursor: "pointer" }}
+                >
+                  <option value="">-- Pilih Provinsi --</option>
+                  <optgroup label="🏠 DI Yogyakarta (Ongkir Gratis)">
+                    <option value="DI Yogyakarta">DI Yogyakarta</option>
+                  </optgroup>
+                  <optgroup label="🚚 Dalam Jawa (+Rp 20.000/order)">
+                    <option value="DKI Jakarta">DKI Jakarta</option>
+                    <option value="Jawa Barat">Jawa Barat</option>
+                    <option value="Jawa Tengah">Jawa Tengah</option>
+                    <option value="Jawa Timur">Jawa Timur</option>
+                    <option value="Banten">Banten</option>
+                  </optgroup>
+                  <optgroup label="✈️ Luar Jawa (+Rp 40.000/order)">
+                    <option value="Aceh">Aceh</option>
+                    <option value="Sumatera Utara">Sumatera Utara</option>
+                    <option value="Sumatera Barat">Sumatera Barat</option>
+                    <option value="Riau">Riau</option>
+                    <option value="Kepulauan Riau">Kepulauan Riau</option>
+                    <option value="Jambi">Jambi</option>
+                    <option value="Bengkulu">Bengkulu</option>
+                    <option value="Sumatera Selatan">Sumatera Selatan</option>
+                    <option value="Kepulauan Bangka Belitung">Kepulauan Bangka Belitung</option>
+                    <option value="Lampung">Lampung</option>
+                    <option value="Bali">Bali</option>
+                    <option value="Nusa Tenggara Barat">Nusa Tenggara Barat</option>
+                    <option value="Nusa Tenggara Timur">Nusa Tenggara Timur</option>
+                    <option value="Kalimantan Barat">Kalimantan Barat</option>
+                    <option value="Kalimantan Tengah">Kalimantan Tengah</option>
+                    <option value="Kalimantan Selatan">Kalimantan Selatan</option>
+                    <option value="Kalimantan Timur">Kalimantan Timur</option>
+                    <option value="Kalimantan Utara">Kalimantan Utara</option>
+                    <option value="Sulawesi Utara">Sulawesi Utara</option>
+                    <option value="Gorontalo">Gorontalo</option>
+                    <option value="Sulawesi Tengah">Sulawesi Tengah</option>
+                    <option value="Sulawesi Barat">Sulawesi Barat</option>
+                    <option value="Sulawesi Selatan">Sulawesi Selatan</option>
+                    <option value="Sulawesi Tenggara">Sulawesi Tenggara</option>
+                    <option value="Maluku Utara">Maluku Utara</option>
+                    <option value="Maluku">Maluku</option>
+                    <option value="Papua Barat">Papua Barat</option>
+                    <option value="Papua Barat Daya">Papua Barat Daya</option>
+                    <option value="Papua">Papua</option>
+                    <option value="Papua Selatan">Papua Selatan</option>
+                    <option value="Papua Tengah">Papua Tengah</option>
+                    <option value="Papua Pegunungan">Papua Pegunungan</option>
+                  </optgroup>
+                </select>
+
+                {/* Auto ongkir indicator */}
+                {addressForm.province && (
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 8,
+                    backgroundColor: addressForm.is_jogja ? "#ecfdf5" : addressForm.is_java ? "#eff6ff" : "#fef3c7",
+                    border: `1px solid ${addressForm.is_jogja ? "#6ee7b7" : addressForm.is_java ? "#bfdbfe" : "#fde68a"}`
+                  }}>
+                    <span style={{ fontSize: 18 }}>{addressForm.is_jogja ? "🏠" : addressForm.is_java ? "🚚" : "✈️"}</span>
+                    <div>
+                      <p style={{ fontSize: 12, fontWeight: 700, color: addressForm.is_jogja ? "#059669" : addressForm.is_java ? "#2563eb" : "#d97706", margin: 0 }}>
+                        {addressForm.is_jogja ? "DI Yogyakarta — Ongkir Gratis!" : addressForm.is_java ? "Dalam Jawa — Ongkir Rp 20.000/order" : "Luar Jawa — Ongkir Rp 40.000/order"}
+                      </p>
+                      <p style={{ fontSize: 10, color: "#9ca3af", margin: "2px 0 0 0" }}>Ongkos kirim akan ditambahkan saat checkout</p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -598,8 +723,8 @@ export default function ProfilePage() {
                 </button>
                 <button 
                   type="submit" 
-                  disabled={saving || addressForm.is_jogja === null}
-                  style={{ flex: 1, padding: "12px", borderRadius: 8, border: "none", backgroundColor: "var(--primary)", color: "white", fontSize: 14, fontWeight: 700, cursor: (saving || addressForm.is_jogja === null) ? "not-allowed" : "pointer", opacity: (saving || addressForm.is_jogja === null) ? 0.7 : 1 }}
+                  disabled={saving || !addressForm.province}
+                  style={{ flex: 1, padding: "12px", borderRadius: 8, border: "none", backgroundColor: "var(--primary)", color: "white", fontSize: 14, fontWeight: 700, cursor: (saving || !addressForm.province) ? "not-allowed" : "pointer", opacity: (saving || !addressForm.province) ? 0.7 : 1 }}
                 >
                   {saving ? "Menyimpan..." : "Simpan"}
                 </button>

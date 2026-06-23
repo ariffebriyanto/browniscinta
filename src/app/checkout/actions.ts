@@ -14,7 +14,11 @@ export async function getProductForCart(id: number) {
         expiration_days: true,
       }
     });
-    return product;
+    if (!product) return null;
+    return {
+      ...product,
+      price: Number(product.price)
+    };
   } catch (error) {
     console.error("Failed to fetch product for cart:", error);
     return null;
@@ -33,7 +37,10 @@ export async function getProductsForCart(ids: number[]) {
         expiration_days: true,
       }
     });
-    return products;
+    return products.map(p => ({
+      ...p,
+      price: Number(p.price)
+    }));
   } catch (error) {
     console.error("Failed to fetch products for cart:", error);
     return [];

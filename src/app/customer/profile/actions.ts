@@ -6,6 +6,8 @@ import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 
+
+
 export async function getUserProfile() {
   const session = await getServerSession(authOptions);
   if (!session?.user) return null;
@@ -26,7 +28,6 @@ export async function updateUserProfile(data: { name?: string; phone?: string; a
     const updateData: any = {};
     if (data.name) updateData.name = data.name;
     if (data.phone) updateData.phone = data.phone;
-    // Keeping this for backward compatibility temporarily if needed
     if (data.address !== undefined) updateData.address = data.address;
     if (data.password) {
       updateData.password_hash = await bcrypt.hash(data.password, 10);
@@ -46,7 +47,7 @@ export async function updateUserProfile(data: { name?: string; phone?: string; a
   }
 }
 
-export async function addAddress(data: { recipient_name: string; phone: string; full_address: string; is_jogja: boolean; is_primary: boolean }) {
+export async function addAddress(data: { recipient_name: string; phone: string; full_address: string; province: string; is_jogja: boolean; is_java: boolean; is_primary: boolean }) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return { error: "Not authenticated" };
 
@@ -60,7 +61,6 @@ export async function addAddress(data: { recipient_name: string; phone: string; 
       });
     }
 
-    // If it's their first address, force it to be primary
     const existingCount = await prisma.userAddress.count({ where: { user_id: userId } });
     const isPrimary = existingCount === 0 ? true : data.is_primary;
 
@@ -70,7 +70,9 @@ export async function addAddress(data: { recipient_name: string; phone: string; 
         recipient_name: data.recipient_name,
         phone: data.phone,
         full_address: data.full_address,
+        province: data.province,
         is_jogja: data.is_jogja,
+        is_java: data.is_java,
         is_primary: isPrimary
       }
     });
@@ -82,14 +84,13 @@ export async function addAddress(data: { recipient_name: string; phone: string; 
   }
 }
 
-export async function updateAddress(id: number, data: { recipient_name?: string; phone?: string; full_address?: string; is_jogja?: boolean; is_primary?: boolean }) {
+export async function updateAddress(id: number, data: { recipient_name?: string; phone?: string; full_address?: string; province?: string; is_jogja?: boolean; is_java?: boolean; is_primary?: boolean }) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return { error: "Not authenticated" };
 
   try {
     const userId = parseInt(session.user.id as string);
 
-    // Verify ownership
     const address = await prisma.userAddress.findFirst({ where: { id, user_id: userId } });
     if (!address) return { error: "Alamat tidak ditemukan" };
 
@@ -100,9 +101,18 @@ export async function updateAddress(id: number, data: { recipient_name?: string;
       });
     }
 
+    const updateData: any = {};
+    if (data.recipient_name !== undefined) updateData.recipient_name = data.recipient_name;
+    if (data.phone !== undefined) updateData.phone = data.phone;
+    if (data.full_address !== undefined) updateData.full_address = data.full_address;
+    if (data.province !== undefined) updateData.province = data.province;
+    if (data.is_jogja !== undefined) updateData.is_jogja = data.is_jogja;
+    if (data.is_java !== undefined) updateData.is_java = data.is_java;
+    if (data.is_primary !== undefined) updateData.is_primary = data.is_primary;
+
     await prisma.userAddress.update({
       where: { id },
-      data
+      data: updateData
     });
 
     revalidatePath('/customer/profile');
@@ -119,13 +129,11 @@ export async function deleteAddress(id: number) {
   try {
     const userId = parseInt(session.user.id as string);
 
-    // Verify ownership
     const address = await prisma.userAddress.findFirst({ where: { id, user_id: userId } });
     if (!address) return { error: "Alamat tidak ditemukan" };
 
     await prisma.userAddress.delete({ where: { id } });
 
-    // If we deleted the primary address, set a new primary if there are other addresses
     if (address.is_primary) {
       const remaining = await prisma.userAddress.findFirst({ where: { user_id: userId } });
       if (remaining) {

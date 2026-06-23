@@ -36,7 +36,9 @@ model UserAddress {
   recipient_name String
   phone          String
   full_address   String   @db.Text
-  is_jogja       Boolean  @default(true)
+  province       String   @default("")
+  is_jogja       Boolean  @default(false)
+  is_java        Boolean  @default(true)
   is_primary     Boolean  @default(false)
 }
 

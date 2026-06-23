@@ -7,6 +7,7 @@ import Catalog from "@/components/Catalog";
 import TopProductsSlider from "@/components/TopProductsSlider";
 
 export default async function Home() {
+  console.log("Force Recompile Home Page - Cache Invalidation 123");
   const session = await getServerSession(authOptions);
 
   const rawProducts = await prisma.product.findMany({
@@ -27,7 +28,6 @@ export default async function Home() {
   });
   
   let actionNeededCount = 0;
-  let isOutsideJogja = false;
 
   if (session?.user) {
     if (session.user.role === "OWNER") {
@@ -41,17 +41,6 @@ export default async function Home() {
           status: { in: ["PENDING", "REFUND_REQUESTED", "SHIPPED"] }
         }
       });
-      
-      // Check primary address
-      const primaryAddress = await prisma.userAddress.findFirst({
-        where: {
-          user_id: parseInt(session.user.id as string),
-          is_primary: true
-        }
-      });
-      if (primaryAddress && primaryAddress.is_jogja === false) {
-        isOutsideJogja = true;
-      }
     }
   }
   
@@ -61,12 +50,17 @@ export default async function Home() {
       .filter(item => validStatuses.includes(item.order.status))
       .reduce((sum, item) => sum + item.quantity, 0);
 
-    const basePrice = Number(p.price);
-    const displayPrice = isOutsideJogja ? basePrice + 5500 : basePrice;
-
     return {
-      ...p,
-      price: displayPrice,
+      id: p.id,
+      name: p.name,
+      description: p.description,
+      price: Number(p.price),
+      stock: p.stock,
+      image_url: p.image_url,
+      is_bestseller: p.is_bestseller,
+      display_order: p.display_order,
+      category: p.category,
+      expiration_days: p.expiration_days,
       soldCount
     };
   });
@@ -244,7 +238,7 @@ export default async function Home() {
             <p style={{ fontSize: 13, color: "var(--text-light)" }}>Terbuat dari bahan premium & dibuat fresh setiap harinya</p>
           </div>
 
-          <Catalog products={products} session={session} isOutsideJogja={isOutsideJogja} />
+          <Catalog products={products} session={session} />
         </div>
       </section>
 

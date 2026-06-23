@@ -141,9 +141,18 @@ function CartCheckoutInner() {
     setDeliveryDate(localISOTime);
   }, []);
 
-  // Compute specific logic based on selected address
+  // Compute zone based on selected address
   const selectedAddress = addresses.find(a => a.id === selectedAddressId);
-  const isOutsideJogja = deliveryMode === "DELIVERY" && selectedAddress && !selectedAddress.is_jogja;
+  const isJogja = deliveryMode === "PICKUP" || (selectedAddress?.is_jogja === true);
+  const isJava = !isJogja && (selectedAddress?.is_java === true);
+  const isOuterJava = !isJogja && !isJava;
+  const isOutsideJogja = !isJogja;
+
+  // Flat shipping per order based on zone
+  const shippingCost = deliveryMode === "PICKUP" ? 0
+    : isJogja ? 0
+    : isJava ? 20000
+    : 40000;
 
   // Enhance cart items with server data and custom pricing
   let hasShortExpiration = false;
@@ -157,20 +166,19 @@ function CartCheckoutInner() {
       hasShortExpiration = true;
     }
 
-    // Adjust price if outside Jogja based on true server price, not localStorage
+    // Use real server base price (no per-product surcharge)
     const basePrice = serverProduct ? Number(serverProduct.price) : Number(item.price);
-    const displayPrice = isOutsideJogja ? basePrice + 5500 : basePrice;
 
     return {
       ...item,
       expiration_days: expirationDays,
-      displayPrice,
-      subtotal: displayPrice * item.qty
+      displayPrice: basePrice,
+      subtotal: basePrice * item.qty
     };
   });
 
   const cartSubtotal = enhancedCartItems.reduce((sum, item) => sum + item.subtotal, 0);
-  const total = cartSubtotal + uniqueCode;
+  const total = cartSubtotal + shippingCost + uniqueCode;
 
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -204,7 +212,9 @@ function CartCheckoutInner() {
 
     const baseService = deliveryMode === "PICKUP" 
       ? 'Ambil Sendiri di Toko' 
-      : (isOutsideJogja ? 'Pengiriman Luar DI Yogyakarta' : 'Pengiriman DI Yogyakarta');
+      : isJogja ? 'Pengiriman DI Yogyakarta (Gratis)'
+      : isJava ? 'Pengiriman Dalam Jawa (+Rp 20.000)'
+      : 'Pengiriman Luar Jawa (+Rp 40.000)';
       
     const formattedDate = new Date(deliveryDate).toLocaleString("id-ID", { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).replace(/\./g, ':');
     const shippingService = `${baseService} (Waktu: ${formattedDate})${selectedAddress ? ` | Penerima: ${selectedAddress.recipient_name} | Alamat: ${selectedAddress.full_address}` : ''}`;
@@ -212,12 +222,12 @@ function CartCheckoutInner() {
     const orderData = {
       userId,
       totalPrice: total,
-      shippingCost: 0, // Shipping is replaced by product surcharge
+      shippingCost: shippingCost,
       shippingService: shippingService,
       items: enhancedCartItems.map(item => ({
         productId: item.id,
         quantity: item.qty,
-        price: item.displayPrice // Using the calculated display price (with 7k surcharge if outside Jogja)
+        price: item.displayPrice
       }))
     };
 
@@ -281,7 +291,7 @@ function CartCheckoutInner() {
                       ⚠️ Pengiriman Luar DI Yogyakarta
                     </p>
                     <p style={{ fontSize: 11, color: "#b45309", margin: "4px 0 0 0" }}>
-                      Harga setiap produk otomatis ditambah Rp 5.500 untuk biaya penanganan luar kota. Pastikan produk yang dipilih memiliki masa expired minimal 7 hari.
+                      Karena pengiriman berada di luar DI Yogyakarta, pastikan produk yang Anda pilih memiliki masa expired minimal 7 hari agar aman sampai tujuan.
                     </p>
                   </div>
                 )}
@@ -413,8 +423,8 @@ function CartCheckoutInner() {
                               <div>
                                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                                   <span style={{ fontWeight: 700, fontSize: 14, color: "#111827" }}>{addr.recipient_name}</span>
-                                  <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4, backgroundColor: addr.is_jogja ? "#ecfdf5" : "#f3f4f6", color: addr.is_jogja ? "#059669" : "#6b7280", fontWeight: 700 }}>
-                                    {addr.is_jogja ? "DI Yogyakarta" : "Luar Yogyakarta"}
+                                  <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 4, backgroundColor: addr.is_jogja ? "#ecfdf5" : addr.is_java ? "#eff6ff" : "#fef3c7", color: addr.is_jogja ? "#059669" : addr.is_java ? "#2563eb" : "#d97706", fontWeight: 700 }}>
+                                    {addr.is_jogja ? "🏠 DI Yogyakarta" : addr.is_java ? "🚚 Dalam Jawa" : "✈️ Luar Jawa"}
                                   </span>
                                 </div>
                                 <p style={{ fontSize: 12, color: "#6b7280", marginBottom: 2 }}>{addr.phone}</p>
@@ -478,16 +488,17 @@ function CartCheckoutInner() {
                     <span style={{ fontWeight: 700, color: "var(--secondary)" }}>Rp {cartSubtotal.toLocaleString('id-ID')}</span>
                   </div>
                   
-                  <div style={{ display: "flex", justifyItems: "center", justifyContent: "space-between", fontSize: 13, color: "#6b7280", borderBottom: "1px dashed #e5e7eb", paddingBottom: 16 }}>
+                  <div style={{ display: "flex", justifyItems: "center", justifyContent: "space-between", fontSize: 13, color: "#6b7280" }}>
                     <div>
-                      <span style={{ fontWeight: 600, display: "block" }}>
-                        Metode Pengiriman
-                      </span>
+                      <span style={{ fontWeight: 600, display: "block" }}>Ongkos Kirim</span>
                       {deliveryMode === "PICKUP" && <span style={{ fontSize: 11, color: "#10b981", fontWeight: 700, display: "block", marginTop: 2 }}>Ambil di Toko</span>}
-                      {deliveryMode === "DELIVERY" && !isOutsideJogja && <span style={{ fontSize: 11, color: "#10b981", fontWeight: 700, display: "block", marginTop: 2 }}>Wilayah DI Yogyakarta</span>}
-                      {deliveryMode === "DELIVERY" && isOutsideJogja && <span style={{ fontSize: 11, color: "#f59e0b", fontWeight: 700, display: "block", marginTop: 2 }}>Luar DI Yogyakarta</span>}
+                      {deliveryMode === "DELIVERY" && isJogja && <span style={{ fontSize: 11, color: "#10b981", fontWeight: 700, display: "block", marginTop: 2 }}>🏠 DI Yogyakarta</span>}
+                      {deliveryMode === "DELIVERY" && isJava && <span style={{ fontSize: 11, color: "#2563eb", fontWeight: 700, display: "block", marginTop: 2 }}>🚚 Dalam Jawa</span>}
+                      {deliveryMode === "DELIVERY" && isOuterJava && <span style={{ fontSize: 11, color: "#d97706", fontWeight: 700, display: "block", marginTop: 2 }}>✈️ Luar Jawa</span>}
                     </div>
-                    <span style={{ fontWeight: 700, color: "#d1d5db" }}>-</span>
+                    <span style={{ fontWeight: 700, color: shippingCost === 0 ? "#10b981" : "var(--secondary)" }}>
+                      {shippingCost === 0 ? "Gratis" : `Rp ${shippingCost.toLocaleString('id-ID')}`}
+                    </span>
                   </div>
 
                   {uniqueCode > 0 && (

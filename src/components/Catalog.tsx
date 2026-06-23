@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import ProductActions from "./ProductActions";
 
-export default function Catalog({ products, session, isOutsideJogja }: { products: any[], session: any, isOutsideJogja?: boolean }) {
+export default function Catalog({ products, session }: { products: any[], session: any }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'none' | 'asc' | 'desc' | 'sold'>('none');
   const [filterExpired, setFilterExpired] = useState<'all' | 'long' | 'short'>('all');
@@ -62,15 +62,7 @@ export default function Catalog({ products, session, isOutsideJogja }: { product
         </div>
       </div>
 
-      {isOutsideJogja && (
-        <div style={{ padding: "12px 16px", backgroundColor: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, marginBottom: 24, display: "flex", alignItems: "center", gap: 12 }}>
-          <span style={{ fontSize: 20 }}>⚠️</span>
-          <div>
-            <p style={{ fontSize: 13, color: "#b45309", fontWeight: 700, margin: 0 }}>Penyesuaian Harga Luar Kota</p>
-            <p style={{ fontSize: 12, color: "#d97706", margin: "2px 0 0 0" }}>Harga produk di bawah ini telah disesuaikan (+Rp 5.500) untuk pengiriman Luar DI Yogyakarta berdasarkan Alamat Utama Anda.</p>
-          </div>
-        </div>
-      )}
+
 
       {/* Grid */}
       {displayedProducts.length === 0 ? (
